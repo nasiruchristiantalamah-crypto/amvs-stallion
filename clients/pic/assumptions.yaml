@@ -1,0 +1,35 @@
+# PIC — Provident Insurance Limited
+# Client-level assumptions and non-life workbook naming — nothing
+# machine-specific here, safe to commit. The actual data FOLDER path is
+# environment-specific and lives outside git — see clients/pic/client.yaml
+# (gitignored, local dev only) and the PIC_DATA_DIR environment variable
+# (production/Railway) — engine/clients.py's load_client() resolves which
+# one to use.
+name: "Provident Insurance Limited"
+currency: "GHS"
+fx_rate_ghs_usd: 15.50
+
+# Non-life workbook file/sheet names — PIC's own naming convention, and the
+# defaults every other client's data_files section is merged on top of
+# (engine/clients.py's DEFAULT_DATA_FILES).
+data_files:
+  ibnr_workbook:     "2025 IBNR Projection (Gross & Net) - Final.xlsx"
+  raw_data_workbook: "2025 PIC Final Data.xlsx"
+  upr_dac_workbook:  "UPR & DAC (2025).xlsx"
+  upr_dac_sheet:     "UPR & DAC"
+  ulae_workbook:     "PIC ULAE (2025) - Final.xlsx"
+  ulae_sheet:        "ULAE Calculation (Rev)"
+
+# Assumption overrides applied on top of a product's saved assumptions
+# (engine/assumptions_store.py) — a quick way to express client-level
+# defaults without editing every product's YAML individually. All optional;
+# omit any key to leave that product's own saved assumption untouched.
+assumption_overrides: {}
+
+# Reinsurance structure — documentation of PIC's treaty terms. Per-rider
+# reinsurance on specific life products is set in products/<name>.yaml
+# instead (engine/product.py's RiderReinsurance); this section is the
+# client-level non-life treaty summary.
+reinsurance:
+  treaty_type: "quota_share"
+  notes: "See RI Balance sheet & Income statement_v2.xlsx and Reinsurance.GMM.xlsx for the real ceded figures by class — treaty percentages aren't separately modelled yet, RI figures are read directly from PIC's own workbooks via data_loader.py."

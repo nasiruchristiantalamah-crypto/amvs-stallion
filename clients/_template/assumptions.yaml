@@ -5,30 +5,28 @@
 # <new_client_id> should be a short lowercase slug (letters/digits/
 # underscores only, matching the folder name) — it's what every API call
 # and engine.runner function will use as client_id.
+#
+# This file (assumptions.yaml) is what makes a client "exist" — see
+# engine.clients.list_clients(). It contains nothing machine-specific, so
+# it's meant to be committed to git. The actual data folder path for this
+# client's non-life Excel workbooks does NOT go here — see client.yaml
+# (gitignored, local dev) / <CLIENT_ID>_DATA_DIR environment variable
+# (production) instead, described at the bottom of this file.
 # ══════════════════════════════════════════════════════════════════════════
 
 name: "TODO — Full legal name of the insurer"
-
-# Folder containing this client's non-life source workbooks (claims
-# triangles, outstanding claims register, UPR/DAC, ULAE). Use a raw string
-# / double-backslashes on Windows. Leave as null if this client is
-# life-only (no non-life reserving data).
-data_folder: null
-
-# Where generated reports/exports are written. Leave null to default to
-# clients/<id>/results/.
-results_folder: null
-
 currency: "GHS"
 fx_rate_ghs_usd: 15.50
 
-# Non-life workbook file/sheet names, RELATIVE TO data_folder. Every key
-# defaults to PIC's own naming convention (engine/clients.py's
-# DEFAULT_DATA_FILES) if omitted here — only override the keys that are
-# actually different for this client. Before assuming a client's files
-# "just work," open them and confirm the sheet names below actually exist
-# — see clients/qic/client.yaml for an example of a client whose files
-# needed several of these overridden.
+# Non-life workbook file/sheet names, RELATIVE TO the data folder (see
+# client.yaml / <CLIENT_ID>_DATA_DIR below). Every key defaults to PIC's
+# own naming convention (engine/clients.py's DEFAULT_DATA_FILES) if omitted
+# here — only override the keys that are actually different for this
+# client. Before assuming a client's files "just work," open them and
+# confirm the sheet names below actually exist — see
+# clients/qic/assumptions.yaml for an example of a client whose files
+# needed several of these overridden. Leave the whole data_files: key out
+# entirely if this client is life-only (no non-life reserving data).
 data_files:
   ibnr_workbook:     "2025 IBNR Projection (Gross & Net) - Final.xlsx"
   raw_data_workbook: "2025 PIC Final Data.xlsx"
@@ -54,7 +52,20 @@ reinsurance:
   notes: "TODO"
 
 # ══════════════════════════════════════════════════════════════════════════
-# After filling this in:
+# Non-life data folder — NOT set here.
+#   Local development: copy client.yaml.example (in this same folder) to
+#   client.yaml and fill in data_folder with the real path on your machine
+#   — client.yaml is gitignored, so it never gets committed.
+#   Production (Railway): set an environment variable named
+#   <NEW_CLIENT_ID>_DATA_DIR (e.g. PIC_DATA_DIR, QIC_DATA_DIR) — this always
+#   takes priority over client.yaml when both are present. See README.md.
+#   If neither is set, this client's non-life endpoints return HTTP 503
+#   rather than crashing — see api/main.py and
+#   engine.clients.ClientConfig.data_dir_available. Life endpoints
+#   (pricing, IFRS 17 GMM) don't need a data folder at all and work
+#   regardless.
+#
+# After filling this file in:
 #   1. Add at least one product under products/<product_name>.yaml
 #      (copy clients/pic/products/whole_life_tier1.yaml as a starting point)
 #   2. Save an initial assumptions version:

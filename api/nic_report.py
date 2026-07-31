@@ -2,22 +2,46 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import datetime
+from engine.clients import load_client
 from engine.runner import run_pricing, run_ifrs17, run_nic_summary
 
+# Same wording as api/main.py's DATA_UNAVAILABLE_DETAIL — Railway can't host
+# clients' real Excel workbooks, so this is the expected, not exceptional,
+# state there. Kept as a plain string here (not imported from api.main) to
+# avoid a circular import between the two modules.
+DATA_UNAVAILABLE_DETAIL = "Data files not available on this server — contact Stallion Consultants to arrange data access"
 
-def _build_section5_non_life():
+
+def _build_section5_non_life(client_id: str = "pic"):
     """
     5.5 Non-life claims reserves — Gross/Net/RI IBNR, OCR, ULAE, UPR, and DAC
-    by class of business, sourced live from PIC's own workbooks via
+    by class of business, sourced live from the client's own workbooks via
     engine.data_loader / engine.runner.run_nic_summary().
 
     Wrapped defensively: the AVR report is primarily a life IFRS 17
-    submission, and this section reads external Excel files that could be
-    moved, renamed, or locked by another process — a failure here shouldn't
-    take down the rest of the report.
+    submission, so a data folder that's missing (expected on Railway — see
+    engine/clients.py) or unreadable (moved, renamed, locked by another
+    process locally) shouldn't take down the rest of the report — this
+    section just reports itself unavailable instead.
     """
     try:
-        summary = run_nic_summary(verbose=False)
+        client = load_client(client_id)
+    except ValueError as e:
+        return {
+            "title":     "5.5 Non-life claims reserves (general insurance)",
+            "available": False,
+            "error":     str(e),
+        }
+
+    if not client.data_dir_available:
+        return {
+            "title":     "5.5 Non-life claims reserves (general insurance)",
+            "available": False,
+            "error":     DATA_UNAVAILABLE_DETAIL,
+        }
+
+    try:
+        summary = run_nic_summary(client_id=client_id, verbose=False)
         return {
             "title":      "5.5 Non-life claims reserves (general insurance)",
             "available":  True,
@@ -238,7 +262,7 @@ def generate_avr_data(
                 "closing_total":    round(lrc.closing_lrc_gmm, 0),
             },
         },
-        "section5_non_life": _build_section5_non_life(),
+        "section5_non_life": _build_section5_non_life(client_id),
         "section6": {
             "title":  "6. IFRS 17 INCOME STATEMENT",
             "period": period,

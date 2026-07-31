@@ -16,7 +16,13 @@ What this file does:
 
 Multi-client — IMPORTANT:
     Every function here takes a `client_id`, resolved via engine/clients.py
-    to a ClientConfig (data_folder + data_files — see clients/<id>/client.yaml).
+    to a ClientConfig. Two files feed that config: the FOLDER a client's
+    workbooks live in (data_folder — either the <CLIENT_ID>_DATA_DIR
+    environment variable in production, or clients/<id>/client.yaml
+    locally, gitignored since it's a real machine-specific path — see
+    engine/clients.py's module docstring) and the workbook/sheet NAMES
+    within that folder (data_files — clients/<id>/assumptions.yaml,
+    committed to git since filenames aren't sensitive).
     Originally this module was hardcoded to PIC's exact file paths; it was
     generalized after finding that a second client (QIC) uses the SAME
     workpaper template (same sheet names: MOTOR/FIRE/ACCIDENT/OTHERS,
@@ -25,14 +31,14 @@ Multi-client — IMPORTANT:
     (Outstanding Claims), a genuinely different COLUMN layout (extra
     columns, Policy/Claim Number order swapped, amount columns shifted).
     Two things are therefore client-configurable:
-        1. File and sheet names          — clients/<id>/client.yaml's data_files
+        1. File and sheet names          — clients/<id>/assumptions.yaml's data_files
         2. Column positions within a sheet — NOT configurable; instead, every
            parser below locates columns by searching for their header TEXT
            rather than assuming a fixed index, so the same code handles both
            PIC's and QIC's layouts without per-client column-offset config.
 
-Source workbooks used (see a client's client.yaml data_files: section for
-the exact names — these are PIC's, the default every other client's
+Source workbooks used (see a client's assumptions.yaml data_files: section
+for the exact names — these are PIC's, the default every other client's
 data_files merges on top of):
     "2025 IBNR Projection (Gross & Net) - Final.xlsx"  (ibnr_workbook)
         Sheets MOTOR / FIRE / ACCIDENT / OTHERS — cumulative incurred claims
@@ -181,7 +187,7 @@ def load_triangle(class_of_business: str, client_id: str = "pic") -> Dict[str, D
 
     Parameters:
         class_of_business : "Motor", "Fire", "Accident", or "Others"
-        client_id           : which client (clients/<client_id>/client.yaml)
+        client_id           : which client (clients/<client_id>/assumptions.yaml)
 
     Returns:
         {

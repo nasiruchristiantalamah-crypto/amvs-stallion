@@ -1,0 +1,20 @@
+# LOCAL DEVELOPMENT ONLY — copy this file to client.yaml (no .example suffix)
+# in this same folder and fill in data_folder. client.yaml is gitignored —
+# it holds a real absolute path specific to your machine, so it's never
+# committed. This file (the .example one) IS committed, as a template.
+#
+# In production (Railway), this file is not used at all — set the
+# <CLIENT_ID>_DATA_DIR environment variable instead (e.g. PIC_DATA_DIR).
+# See README.md and engine/clients.py's load_client() for the precedence
+# rules between the two.
+
+# Folder containing this client's non-life source workbooks (claims
+# triangles, outstanding claims register, UPR/DAC, ULAE). Use a raw string
+# / double-backslashes on Windows. Leave as null if this client is
+# life-only (no non-life reserving data) — or just delete client.yaml
+# entirely once you've set the <CLIENT_ID>_DATA_DIR env var.
+data_folder: null
+
+# Where generated reports/exports are written. Leave null to default to
+# clients/<id>/results/.
+results_folder: null

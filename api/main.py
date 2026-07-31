@@ -96,6 +96,23 @@ def _resolve_product_name(product: str, tier: int) -> str:
 
 DEFAULT_CLIENT = "pic"
 
+# Railway can't host clients' real Excel workbooks (private, large,
+# machine-specific paths — see engine/clients.py's <CLIENT_ID>_DATA_DIR
+# handling). Non-life routes call this before touching engine/data_loader.py
+# so a missing data folder fails as a clear 503, not a confusing
+# FileNotFoundError several layers down. Life endpoints (pricing, IFRS 17
+# GMM) never call this — they don't read from a data folder at all.
+DATA_UNAVAILABLE_DETAIL = "Data files not available on this server — contact Stallion Consultants to arrange data access"
+
+def _require_data_access(client_id: str) -> None:
+    try:
+        client = load_client(client_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if not client.data_dir_available:
+        raise HTTPException(status_code=503, detail=DATA_UNAVAILABLE_DETAIL)
+
+
 class PricingRequest(BaseModel):
     entry_age:         int   = Field(35,   ge=18, le=70)
     tier:              int   = Field(1,    ge=1,  le=3)
@@ -284,6 +301,7 @@ def reserving_endpoint(request: ReservingRequest, db: Session = Depends(get_db),
 
 @protected.get("/reserving/nic-summary")
 def reserving_nic_summary_endpoint(client_id: str = DEFAULT_CLIENT, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _require_data_access(client_id)
     try:
         result = run_nic_summary(client_id=client_id, verbose=False)
         _log_valuation_run(db, current_user, "nic_summary", {"client_id": client_id}, result, client_id=client_id)
@@ -323,6 +341,7 @@ def nonlife_statements_endpoint(request: NonLifeStatementsRequest, db: Session =
                 f"available clients: {list_clients()}"
             ),
         )
+    _require_data_access(request.client_id)
     try:
         client = load_client(request.client_id)
         kwargs = {
@@ -458,6 +477,8 @@ class WordExportRequest(BaseModel):
 
 @protected.post("/export/word")
 def export_word_endpoint(request: WordExportRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    if request.include_nonlife and request.client_id in list_clients():
+        _require_data_access(request.client_id)
     try:
         avr = generate_avr_data(
             company_name      = request.company_name,

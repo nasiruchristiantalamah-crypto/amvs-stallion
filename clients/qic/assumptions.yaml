@@ -1,0 +1,40 @@
+# QIC — Quality Life Insurance Company (Quality Life. QIC)
+#
+# IMPORTANT — honest status note (read before assuming this "just works"):
+# Only the file/sheet names below have been confirmed to exist and match
+# PIC's workbook SHAPE closely (same sheet names: MOTOR/FIRE/ACCIDENT/OTHERS
+# in the IBNR workbook; Premium & Commission-2025/Paid Claims-2025/
+# Outstanding Claims-2025 in the raw data workbook; ULAE Calculation (Rev)
+# in the ULAE workbook — QIC and PIC clearly share the same underlying
+# actuarial workpaper template). What has NOT been fully verified end-to-end
+# yet: QIC's "Outstanding Claims-2025" sheet has a DIFFERENT column layout
+# than PIC's (extra "IFRS 17 Portfolio" and "Underwriting Date" columns,
+# Policy Number/Claim Number reversed, amount columns at different
+# positions) — engine/data_loader.py's load_ocr() was made column-position-
+# independent (searches for header text rather than assuming fixed
+# columns) specifically to handle this, but a full run against QIC's real
+# numbers with a known benchmark (the way PIC was validated against its own
+# real Balance Sheet 2025) has not been done. Treat QIC's non-life output
+# as "should work structurally" rather than "validated," until it's been
+# checked against a real QIC valuation result.
+#
+# The actual data FOLDER path is environment-specific and lives outside
+# git — see clients/qic/client.yaml (gitignored, local dev only) and the
+# QIC_DATA_DIR environment variable (production/Railway).
+name: "Quality Life Insurance Company (QIC)"
+currency: "GHS"
+fx_rate_ghs_usd: 15.50
+
+data_files:
+  ibnr_workbook:     "QIC 2025 IBNR Projection.xlsx"
+  raw_data_workbook: "2025 QIC Final Data.xlsx"
+  upr_dac_workbook:  "2025 QIC UPR & DAC.xlsx"
+  upr_dac_sheet:     "UPR Calc"
+  ulae_workbook:     "QIC ULAE (2025).xlsx"
+  ulae_sheet:        "ULAE Calculation (Rev)"
+
+assumption_overrides: {}
+
+reinsurance:
+  treaty_type: "quota_share"
+  notes: "Not yet reviewed against QIC's own reinsurance workbooks — placeholder."

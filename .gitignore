@@ -9,11 +9,15 @@ __pycache__/
 # Local dev database (SQLite fallback when DATABASE_URL isn't set — see db/database.py)
 *.db
 
-# Client configs contain real, sensitive local folder paths (data_folder).
-# clients/_template/client.yaml is the deliberate exception — it has no real
-# path (data_folder: null) and is the template new clients are onboarded from.
+# client.yaml holds one client's real, machine-specific data folder path
+# (local development only — see engine/clients.py's load_client() and
+# README.md). clients/<id>/assumptions.yaml is the counterpart that IS
+# committed — name, currency, non-life workbook filenames, assumption
+# overrides, reinsurance — nothing machine-specific, and it's what makes a
+# client "exist" (see list_clients()), so excluding client.yaml never hides
+# a whole client. clients/_template/client.yaml.example is unaffected by
+# this rule (different filename) and stays committed as the onboarding template.
 clients/*/client.yaml
-!clients/_template/client.yaml
 
 # Generated report output — regenerated on demand by excel_exporter.py /
 # word_exporter.py, not source of truth.
