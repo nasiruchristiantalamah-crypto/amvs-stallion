@@ -1,0 +1,44 @@
+# ============================================================
+# AMVS — Ghana Actuarial Modelling & Valuation System
+# Python dependencies
+# ============================================================
+
+# Core scientific computing (actuarial calculations)
+scipy>=1.11.0           # Premium solver (Brent's method — Goal Seek equivalent)
+numpy>=1.24.0           # Numerical arrays and maths
+
+# Web framework (FastAPI backend — Step 2)
+fastapi>=0.104.0        # REST API layer
+uvicorn>=0.24.0         # ASGI server to run FastAPI
+pydantic>=2.0.0         # Data validation and serialisation
+
+# Database (Step 4)
+sqlalchemy>=2.0.0       # ORM for PostgreSQL
+psycopg2-binary>=2.9.0  # PostgreSQL driver
+alembic>=1.12.0         # Database migrations
+
+# Authentication (JWT — see auth/ and db/models.py's User table)
+pyjwt>=2.8.0             # JWT access token creation/verification
+bcrypt>=4.0.0             # Password hashing
+python-multipart>=0.0.9   # Required by FastAPI's OAuth2PasswordRequestForm (login form parsing)
+email-validator>=2.0.0    # Pydantic EmailStr validation on the register endpoint
+
+# Reporting and output
+openpyxl>=3.1.0         # Excel output (rate tables, NIC submissions)
+reportlab>=4.0.0        # PDF report generation
+
+# Utilities
+python-dotenv>=1.0.0    # Environment variables (.env file)
+python-dateutil>=2.8.0  # Date handling
+pyyaml>=6.0.0            # Client/product/assumption config files
+pyxlsb>=1.0.10           # Reading .xlsb client workbooks
+python-docx>=1.1.0       # Word (.docx) AVR report export (Phase 5)
+
+# Development and testing
+pytest>=7.4.0           # Unit testing
+pytest-cov>=4.1.0       # Test coverage
+
+# ============================================================
+# Install all at once:
+#   pip install -r requirements.txt --break-system-packages
+# ============================================================

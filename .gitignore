@@ -1,0 +1,28 @@
+# Environment / secrets — copy .env.example to .env locally; never commit .env
+.env
+
+# Python bytecode/cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Local dev database (SQLite fallback when DATABASE_URL isn't set — see db/database.py)
+*.db
+
+# Client configs contain real, sensitive local folder paths (data_folder).
+# clients/_template/client.yaml is the deliberate exception — it has no real
+# path (data_folder: null) and is the template new clients are onboarded from.
+clients/*/client.yaml
+!clients/_template/client.yaml
+
+# Generated report output — regenerated on demand by excel_exporter.py /
+# word_exporter.py, not source of truth.
+*.xlsx
+*.docx
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+
+# Ad-hoc debug logs from local smoke-testing (uvicorn stdout/stderr redirects)
+*.log

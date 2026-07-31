@@ -1,0 +1,65 @@
+# ══════════════════════════════════════════════════════════════════════════
+# BLANK CLIENT CONFIG TEMPLATE — copy this whole clients/_template/ folder
+# to clients/<new_client_id>/ and fill in the fields below.
+#
+# <new_client_id> should be a short lowercase slug (letters/digits/
+# underscores only, matching the folder name) — it's what every API call
+# and engine.runner function will use as client_id.
+# ══════════════════════════════════════════════════════════════════════════
+
+name: "TODO — Full legal name of the insurer"
+
+# Folder containing this client's non-life source workbooks (claims
+# triangles, outstanding claims register, UPR/DAC, ULAE). Use a raw string
+# / double-backslashes on Windows. Leave as null if this client is
+# life-only (no non-life reserving data).
+data_folder: null
+
+# Where generated reports/exports are written. Leave null to default to
+# clients/<id>/results/.
+results_folder: null
+
+currency: "GHS"
+fx_rate_ghs_usd: 15.50
+
+# Non-life workbook file/sheet names, RELATIVE TO data_folder. Every key
+# defaults to PIC's own naming convention (engine/clients.py's
+# DEFAULT_DATA_FILES) if omitted here — only override the keys that are
+# actually different for this client. Before assuming a client's files
+# "just work," open them and confirm the sheet names below actually exist
+# — see clients/qic/client.yaml for an example of a client whose files
+# needed several of these overridden.
+data_files:
+  ibnr_workbook:     "2025 IBNR Projection (Gross & Net) - Final.xlsx"
+  raw_data_workbook: "2025 PIC Final Data.xlsx"
+  upr_dac_workbook:  "UPR & DAC (2025).xlsx"
+  upr_dac_sheet:     "UPR & DAC"
+  ulae_workbook:     "PIC ULAE (2025) - Final.xlsx"
+  ulae_sheet:        "ULAE Calculation (Rev)"
+
+# Assumption overrides applied on top of a product's saved assumptions
+# (engine/assumptions_store.py). All optional — omit any key to leave that
+# product's own saved assumption untouched. Example:
+#   assumption_overrides:
+#     mortality_loading: -0.25
+#     collection_rate: 0.75
+assumption_overrides: {}
+
+# Reinsurance structure — documentation of this client's treaty terms.
+# Per-rider reinsurance on a specific life product is set in
+# products/<name>.yaml instead (engine/product.py's RiderReinsurance);
+# this is the client-level non-life treaty summary.
+reinsurance:
+  treaty_type: "quota_share"   # or "surplus", "excess_of_loss", "none"
+  notes: "TODO"
+
+# ══════════════════════════════════════════════════════════════════════════
+# After filling this in:
+#   1. Add at least one product under products/<product_name>.yaml
+#      (copy clients/pic/products/whole_life_tier1.yaml as a starting point)
+#   2. Save an initial assumptions version:
+#        from engine.assumptions import ProductAssumptions
+#        from engine.assumptions_store import save_assumptions
+#        save_assumptions("<new_client_id>", "<product_name>", ProductAssumptions(...), label="Initial basis")
+#   3. Test: engine.runner.run_pricing(client_id="<new_client_id>", product_name="<product_name>", ...)
+# ══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NIC AVR Report — AMVS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f5f5f5;color:#333;font-size:14px}
+.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+.sidebar{background:#1F3864;color:white;padding:0;position:sticky;top:0;height:100vh;overflow-y:auto}
+.logo{padding:20px 16px;border-bottom:1px solid rgba(255,255,255,0.1)}
+.logo-title{font-size:16px;font-weight:bold;color:white}
+.logo-sub{font-size:11px;color:rgba(255,255,255,0.5);margin-top:4px;line-height:1.4}
+.nav-item{display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:pointer;color:rgba(255,255,255,0.7);font-size:13px;border-left:3px solid transparent}
+.nav-item:hover{background:rgba(255,255,255,0.08);color:white}
+.nav-item.active{background:rgba(255,255,255,0.12);color:white;border-left-color:#C9A84C;font-weight:bold}
+.main{padding:24px}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.page-title{font-size:20px;font-weight:bold;color:#1F3864}
+.badge{background:#FFF2CC;color:#7B3F00;font-size:11px;padding:3px 10px;border-radius:12px;font-weight:bold;border:1px solid #C9A84C}
+.panel{background:white;border-radius:8px;border:1px solid #e0e0e0;padding:20px;margin-bottom:16px}
+.panel-title{font-size:15px;font-weight:bold;color:#1F3864;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #1F3864}
+.section-title{font-size:13px;font-weight:bold;color:#2E5090;background:#D9E1F2;padding:8px 12px;border-radius:4px;margin:16px 0 10px;border-left:4px solid #1F3864}
+.form-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group label{font-size:12px;color:#555;font-weight:bold}
+select,input[type="text"],input[type="number"]{width:100%;font-size:13px;border:1px solid #ddd;border-radius:6px;padding:8px 10px;color:#333;background:white}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:bold;border:1px solid #ddd;background:white;color:#333;transition:all .15s}
+.btn-primary{background:#1F3864;border-color:#1F3864;color:white}
+.btn-primary:hover{background:#2E5090}
+.btn-gold{background:#C9A84C;border-color:#C9A84C;color:white}
+.btn-gold:hover{background:#B8973B}
+.btn-green{background:#1E5631;border-color:#1E5631;color:white}
+.btn:disabled{opacity:0.6;cursor:not-allowed}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px}
+th{text-align:left;padding:9px 12px;background:#1F3864;color:white;font-size:12px}
+td{padding:8px 12px;border-bottom:1px solid #f0f0f0}
+td.label{color:#666;font-size:12px;width:45%}
+td.value{font-weight:bold;color:#333}
+td.value.good{color:#1E5631}
+td.value.bad{color:#c62828}
+td.value.warn{color:#e65100}
+tr:hover td{background:#fafafa}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.three-col{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.kpi{background:white;border-radius:8px;padding:14px;border:1px solid #e0e0e0;text-align:center}
+.kpi-label{font-size:11px;color:#888;text-transform:uppercase;margin-bottom:6px}
+.kpi-value{font-size:20px;font-weight:bold;color:#1F3864}
+.kpi-sub{font-size:11px;color:#aaa;margin-top:4px}
+.opinion-box{background:#F9F9F0;border:1px solid #C9A84C;border-radius:6px;padding:20px;line-height:1.8;font-size:13px;color:#333;margin-top:8px}
+.sig-box{background:#f5f5f5;border:1px solid #ddd;border-radius:6px;padding:20px;margin-top:16px;font-family:Georgia,serif}
+.alert-solvent{background:#E2EFDA;border:1px solid #375623;color:#1E5631;padding:10px 16px;border-radius:6px;font-weight:bold;font-size:13px;display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.alert-breach{background:#FFE0E0;border:1px solid #c62828;color:#c62828;padding:10px 16px;border-radius:6px;font-weight:bold;font-size:13px;display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.hidden{display:none}
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,0.4);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tab-bar{display:flex;gap:0;border-bottom:2px solid #e0e0e0;margin-bottom:16px}
+.tab{padding:8px 14px;font-size:12px;cursor:pointer;color:#888;border-bottom:2px solid transparent;margin-bottom:-2px;font-weight:bold;white-space:nowrap}
+.tab.active{color:#1F3864;border-bottom-color:#1F3864}
+.tab-pane{display:none}.tab-pane.active{display:block}
+.deadline-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f0f0f0}
+.deadline-q{font-weight:bold;color:#1F3864;font-size:13px}
+.deadline-date{font-size:12px;color:#666}
+.deadline-badge{font-size:11px;padding:2px 8px;border-radius:10px;background:#FFF2CC;color:#7B3F00;font-weight:bold}
+.watermark{position:fixed;bottom:20px;right:20px;font-size:11px;color:#ccc;font-style:italic}
+@media print{
+  .sidebar{display:none}
+  .shell{grid-template-columns:1fr}
+  .btn-row{display:none}
+  body{background:white}
+  .panel{border:1px solid #ccc;break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <div class="sidebar">
+    <div class="logo">
+      <div class="logo-title">AMVS</div>
+      <div class="logo-sub">Ghana Actuarial Modelling<br>& Valuation System<br>Stallion Consultants Ltd</div>
+    </div>
+    <div style="padding:8px 0">
+      <div class="nav-item" onclick="window.location='dashboard.html'">⬅ Back to dashboard</div>
+      <div style="padding:10px 16px;font-size:11px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-top:8px">NIC Report Sections</div>
+      <div class="nav-item active" onclick="showTab('inputs',this)">📥 Report inputs</div>
+      <div class="nav-item" onclick="showTab('s1',this)">1. Executive summary</div>
+      <div class="nav-item" onclick="showTab('s2',this)">2. Product description</div>
+      <div class="nav-item" onclick="showTab('s3',this)">3. Assumptions</div>
+      <div class="nav-item" onclick="showTab('s4',this)">4. Methodology</div>
+      <div class="nav-item" onclick="showTab('s5',this)">5. Liabilities</div>
+      <div class="nav-item" onclick="showTab('s6',this)">6. Income statement</div>
+      <div class="nav-item" onclick="showTab('s7',this)">7. CSM roll-forward</div>
+      <div class="nav-item" onclick="showTab('s8',this)">8. Solvency</div>
+      <div class="nav-item" onclick="showTab('s9',this)">9. Actuarial opinion</div>
+      <div class="nav-item" onclick="showTab('schedule',this)">📅 NIC schedule</div>
+    </div>
+    <div style="padding:16px;border-top:1px solid rgba(255,255,255,0.1);margin-top:auto;font-size:11px;color:rgba(255,255,255,0.4)">
+      <div><span id="api-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#aaa;margin-right:6px"></span><span id="api-status">Checking...</span></div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="page-title">🏛️ NIC Actuarial Valuation Report (AVR)</div>
+      <span class="badge">IFRS 17 — Ghana NIC Framework</span>
+    </div>
+
+    <!-- INPUTS TAB -->
+    <div class="tab-pane active" id="pane-inputs">
+      <div class="panel">
+        <div class="panel-title">📥 Report inputs — fill in and click Generate</div>
+        <div class="form-row">
+          <div class="form-group"><label>Company name</label><input type="text" id="r-company" value="Quality Insurance PLC"></div>
+          <div class="form-group"><label>Reporting period</label><input type="text" id="r-period" value="FY2025" placeholder="e.g. FY2025 or Q1 2026"></div>
+          <div class="form-group"><label>Report type</label>
+            <select id="r-freq">
+              <option value="annual">Annual (31 December)</option>
+              <option value="quarterly">Quarterly</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>In-force policies</label><input type="number" id="r-count" value="500" min="1"></div>
+          <div class="form-group"><label>Representative entry age</label><input type="number" id="r-age" value="35" min="18" max="70"></div>
+          <div class="form-group"><label>Product tier</label>
+            <select id="r-tier">
+              <option value="1">Tier 1 — Basic (GHS 5,000)</option>
+              <option value="2">Tier 2 — Standard (GHS 10,000)</option>
+              <option value="3">Tier 3 — Premium (GHS 20,000)</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Appointed actuary</label><input type="text" id="r-actuary" value="Charles Osei-Akoto"></div>
+          <div class="form-group"><label>Consulting firm</label><input type="text" id="r-firm" value="Stallion Consultants Ltd"></div>
+          <div class="form-group" style="justify-content:flex-end;padding-top:20px">
+            <button class="btn btn-primary" onclick="generateReport()" id="btn-gen">▶ Generate AVR</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" id="quick-summary" style="display:none">
+        <div class="panel-title">⚡ Report generated — quick summary</div>
+        <div class="kpi-grid">
+          <div class="kpi"><div class="kpi-label">Total liabilities</div><div class="kpi-value" id="qs-liab">—</div><div class="kpi-sub">GHS</div></div>
+          <div class="kpi"><div class="kpi-label">Insurance service result</div><div class="kpi-value" id="qs-isr">—</div><div class="kpi-sub">GHS</div></div>
+          <div class="kpi"><div class="kpi-label">Capital adequacy ratio</div><div class="kpi-value" id="qs-car">—</div><div class="kpi-sub">Min: 100%</div></div>
+          <div class="kpi"><div class="kpi-label">Solvency status</div><div class="kpi-value" id="qs-status">—</div><div class="kpi-sub">NIC GIRBC</div></div>
+        </div>
+        <div id="solv-alert"></div>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="printReport()">🖨️ Print / Save as PDF</button>
+          <button class="btn btn-gold" onclick="showTab('s1',null)">📄 View full report</button>
+          <button class="btn btn-green" onclick="exportWord()">📝 Export to Word</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 1 -->
+    <div class="tab-pane" id="pane-s1">
+      <div class="panel">
+        <div class="panel-title">Section 1 — Executive Summary</div>
+        <div id="s1-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- SECTION 2 -->
+    <div class="tab-pane" id="pane-s2">
+      <div class="panel">
+        <div class="panel-title">Section 2 — Product and Portfolio Description</div>
+        <div id="s2-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- SECTION 3 -->
+    <div class="tab-pane" id="pane-s3">
+      <div class="panel">
+        <div class="panel-title">Section 3 — Actuarial Assumptions</div>
+        <div id="s3-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- SECTION 4 -->
+    <div class="tab-pane" id="pane-s4">
+      <div class="panel">
+        <div class="panel-title">Section 4 — Valuation Methodology</div>
+        <div id="s4-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- SECTION 5 -->
+    <div class="tab-pane" id="pane-s5">
+      <div class="panel">
+        <div class="panel-title">Section 5 — Insurance Contract Liabilities</div>
+        <div id="s5-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- SECTION 6 -->
+    <div class="tab-pane" id="pane-s6">
+      <div class="panel">
+        <div class="panel-title">Section 6 — IFRS 17 Income Statement</div>
+        <div id="s6-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- SECTION 7 -->
+    <div class="tab-pane" id="pane-s7">
+      <div class="panel">
+        <div class="panel-title">Section 7 — CSM Roll-Forward</div>
+        <div id="s7-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- SECTION 8 -->
+    <div class="tab-pane" id="pane-s8">
+      <div class="panel">
+        <div class="panel-title">Section 8 — Solvency and Capital Adequacy</div>
+        <div id="s8-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- SECTION 9 -->
+    <div class="tab-pane" id="pane-s9">
+      <div class="panel">
+        <div class="panel-title">Section 9 — Actuarial Opinion and Certificate</div>
+        <div id="s9-content"><p style="color:#aaa">Generate the report first.</p></div>
+      </div>
+    </div>
+
+    <!-- NIC SCHEDULE -->
+    <div class="tab-pane" id="pane-schedule">
+      <div class="panel">
+        <div class="panel-title">📅 NIC Submission Schedule 2026</div>
+        <div class="deadline-row">
+          <div><div class="deadline-q">Q1 2026</div><div class="deadline-date">Period: 1 January – 31 March 2026</div></div>
+          <div class="deadline-badge">Deadline: 30 April 2026</div>
+        </div>
+        <div class="deadline-row">
+          <div><div class="deadline-q">Q2 2026</div><div class="deadline-date">Period: 1 April – 30 June 2026</div></div>
+          <div class="deadline-badge">Deadline: 31 July 2026</div>
+        </div>
+        <div class="deadline-row">
+          <div><div class="deadline-q">Q3 2026</div><div class="deadline-date">Period: 1 July – 30 September 2026</div></div>
+          <div class="deadline-badge">Deadline: 31 October 2026</div>
+        </div>
+        <div class="deadline-row">
+          <div><div class="deadline-q">Q4 2025 / Annual</div><div class="deadline-date">Period: 1 October – 31 December 2025</div></div>
+          <div class="deadline-badge">Deadline: 31 January 2026</div>
+        </div>
+        <div style="margin-top:16px;padding:12px;background:#FFF2CC;border-radius:6px;font-size:12px;color:#7B3F00">
+          <strong>Note:</strong> All quarterly AVR submissions must be accompanied by a signed actuarial certificate from the Appointed Actuary. Annual submissions require the full AVR in the format prescribed by the NIC GIRBC framework.
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="watermark">AMVS — Stallion Consultants Ltd</div>
+
+<script>
+const API = 'http://localhost:8000';
+let AVR = null;
+
+// API health check
+async function checkAPI(){
+  try{
+    await fetch(API+'/health',{signal:AbortSignal.timeout(3000)});
+    document.getElementById('api-dot').style.background='#4CAF50';
+    document.getElementById('api-status').textContent='API online ✓';
+  }catch(e){
+    document.getElementById('api-dot').style.background='#f44336';
+    document.getElementById('api-status').textContent='API offline ✗';
+  }
+}
+checkAPI();
+
+function showTab(id, el){
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('pane-'+id).classList.add('active');
+  if(el) el.classList.add('active');
+}
+
+function fmt(n){ return typeof n==='number'?n.toLocaleString('en-GH',{minimumFractionDigits:0,maximumFractionDigits:0}):n; }
+function fmtc(n){ return 'GHS '+fmt(n); }
+function pct(n){ return typeof n==='number'?n.toFixed(2)+'%':n; }
+
+async function generateReport(){
+  const btn = document.getElementById('btn-gen');
+  btn.innerHTML='<span class="spinner"></span> Generating...';
+  btn.disabled=true;
+
+  const body={
+    company_name:      document.getElementById('r-company').value,
+    period:            document.getElementById('r-period').value,
+    reporting_freq:    document.getElementById('r-freq').value,
+    in_force_count:    parseInt(document.getElementById('r-count').value),
+    entry_age:         parseInt(document.getElementById('r-age').value),
+    tier:              parseInt(document.getElementById('r-tier').value),
+    appointed_actuary: document.getElementById('r-actuary').value,
+    consulting_firm:   document.getElementById('r-firm').value,
+  };
+
+  try{
+    const r = await fetch(API+'/nic/avr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d = await r.json();
+    if(!d.success) throw new Error(d.detail);
+    AVR = d.data;
+    populateReport(AVR);
+    document.getElementById('quick-summary').style.display='block';
+    btn.innerHTML='✓ Report generated';
+  }catch(e){
+    alert('Error: '+e.message+'\n\nMake sure your API server is running:\ncd amvs\npython -m uvicorn api.main:app --reload --port 8000');
+    btn.innerHTML='▶ Generate AVR';
+  }
+  btn.disabled=false;
+}
+
+function populateReport(avr){
+  const s5  = avr.section5;
+  const s5nl= avr.section5_non_life;
+  const s6  = avr.section6;
+  const s7  = avr.section7;
+  const s8  = avr.section8;
+  const cov = avr.cover;
+
+  // Quick summary KPIs
+  document.getElementById('qs-liab').textContent   = fmtc(s5.total_liabilities);
+  document.getElementById('qs-isr').textContent    = fmtc(s6.insurance_service_result);
+  document.getElementById('qs-car').textContent    = pct(s8.capital_adequacy_ratio);
+  document.getElementById('qs-status').textContent = s8.solvency_status;
+  document.getElementById('qs-status').style.color = s8.is_solvent ? '#1E5631' : '#c62828';
+
+  const alertDiv = document.getElementById('solv-alert');
+  if(s8.is_solvent){
+    alertDiv.innerHTML='<div class="alert-solvent">✓ Company is SOLVENT — CAR of '+pct(s8.capital_adequacy_ratio)+' exceeds the 100% minimum requirement.</div>';
+  } else {
+    alertDiv.innerHTML='<div class="alert-breach">⚠ CAPITAL BREACH — CAR of '+pct(s8.capital_adequacy_ratio)+' is below the 100% minimum. Immediate action required.</div>';
+  }
+
+  // Section 1
+  const s1 = avr.section1;
+  document.getElementById('s1-content').innerHTML=`
+    <div class="section-title">1.1 Report identification</div>
+    <table><tbody>
+      <tr><td class="label">Company</td><td class="value">${cov.company}</td></tr>
+      <tr><td class="label">Reporting period</td><td class="value">${cov.period}</td></tr>
+      <tr><td class="label">Report type</td><td class="value">${s1.reporting_frequency} AVR</td></tr>
+      <tr><td class="label">Reporting standard</td><td class="value">${cov.reporting_standard}</td></tr>
+      <tr><td class="label">Measurement model</td><td class="value">${s1.measurement_model}</td></tr>
+      <tr><td class="label">In-force policies</td><td class="value">${fmt(s1.in_force_policies)}</td></tr>
+      <tr><td class="label">Prepared by</td><td class="value">${cov.consulting_firm}</td></tr>
+      <tr><td class="label">Report date</td><td class="value">${cov.report_date}</td></tr>
+    </tbody></table>
+    <div class="section-title">1.2 Key findings</div>
+    <table><tbody>${s1.key_findings.map(f=>`<tr><td>• ${f}</td></tr>`).join('')}</tbody></table>
+    <div class="section-title">1.3 Actuary's comment</div>
+    <div class="opinion-box">${s1.actuary_comment}</div>`;
+
+  // Section 2
+  const s2 = avr.section2;
+  document.getElementById('s2-content').innerHTML=`
+    <table><tbody>
+      <tr><td class="label">Product name</td><td class="value">${s2.product_name}</td></tr>
+      <tr><td class="label">Product type</td><td class="value">${s2.product_type}</td></tr>
+      <tr><td class="label">Coverage</td><td class="value">${s2.coverage}</td></tr>
+      <tr><td class="label">Benefit tiers</td><td class="value">${s2.benefit_tiers}</td></tr>
+      <tr><td class="label">Benefits covered</td><td class="value">${s2.benefits_covered.join('<br>')}</td></tr>
+      <tr><td class="label">Premium mode</td><td class="value">${s2.premium_mode}</td></tr>
+      <tr><td class="label">Policy term</td><td class="value">${s2.policy_term}</td></tr>
+      <tr><td class="label">Entry age range</td><td class="value">${s2.entry_age_range}</td></tr>
+      <tr><td class="label">Portfolio size</td><td class="value">${fmt(s2.portfolio_size)} policies</td></tr>
+      <tr><td class="label">Annual cohort</td><td class="value">${s2.cohort_year}</td></tr>
+      <tr><td class="label">Portfolio grouping</td><td class="value">${s2.portfolio_grouping}</td></tr>
+      <tr><td class="label">Measurement model</td><td class="value">${s2.measurement_model}</td></tr>
+    </tbody></table>`;
+
+  // Section 3
+  const s3 = avr.section3;
+  document.getElementById('s3-content').innerHTML=`
+    <div class="section-title">3.1 Mortality</div>
+    <table><tbody>
+      <tr><td class="label">Mortality table</td><td class="value">${s3.mortality.table}</td></tr>
+      <tr><td class="label">Gender basis</td><td class="value">${s3.mortality.gender}</td></tr>
+      <tr><td class="label">Loading applied</td><td class="value">${s3.mortality.loading}</td></tr>
+      <tr><td class="label">Rationale</td><td class="value">${s3.mortality.rationale}</td></tr>
+    </tbody></table>
+    <div class="section-title">3.2 Morbidity</div>
+    <table><tbody>
+      <tr><td class="label">TPD incidence rate</td><td class="value">${s3.morbidity.tpd_rate}</td></tr>
+      <tr><td class="label">Hospitalisation rate</td><td class="value">${s3.morbidity.hosp_rate}</td></tr>
+      <tr><td class="label">Average hospital stay</td><td class="value">${s3.morbidity.avg_hosp_days}</td></tr>
+    </tbody></table>
+    <div class="section-title">3.3 Lapse rates</div>
+    <table><thead><tr><th>Policy year</th><th>Annual lapse rate</th></tr></thead><tbody>
+      <tr><td>Year 1</td><td>${s3.lapses.year_1}</td></tr>
+      <tr><td>Year 2</td><td>${s3.lapses.year_2}</td></tr>
+      <tr><td>Year 3</td><td>${s3.lapses.year_3}</td></tr>
+      <tr><td>Year 5</td><td>${s3.lapses.year_5}</td></tr>
+      <tr><td>Year 10</td><td>${s3.lapses.year_10}</td></tr>
+      <tr><td>Year 13+ (ultimate)</td><td>${s3.lapses.ultimate}</td></tr>
+    </tbody></table>
+    <div class="section-title">3.4 Economic assumptions</div>
+    <table><tbody>
+      <tr><td class="label">Valuation interest rate</td><td class="value">${s3.economic.valuation_rate}</td></tr>
+      <tr><td class="label">Investment return</td><td class="value">${s3.economic.investment_return}</td></tr>
+      <tr><td class="label">Locked-in rate (CSM)</td><td class="value">${s3.economic.locked_in_rate}</td></tr>
+      <tr><td class="label">Expense inflation</td><td class="value">${s3.economic.expense_inflation}</td></tr>
+      <tr><td class="label">GHS/USD FX rate</td><td class="value">${s3.economic.fx_rate}</td></tr>
+      <tr><td class="label">Discount rate method</td><td class="value">${s3.economic.discount_method}</td></tr>
+    </tbody></table>
+    <div class="section-title">3.5 Expenses and commissions</div>
+    <table><tbody>
+      <tr><td class="label">Policy fee</td><td class="value">${s3.expenses.policy_fee}</td></tr>
+      <tr><td class="label">Acquisition cost</td><td class="value">${s3.expenses.acquisition_cost}</td></tr>
+      <tr><td class="label">Renewal expense</td><td class="value">${s3.expenses.renewal_expense}</td></tr>
+      <tr><td class="label">Initial commission</td><td class="value">${s3.commissions.initial}</td></tr>
+      <tr><td class="label">Renewal commission</td><td class="value">${s3.commissions.renewal}</td></tr>
+      <tr><td class="label">Collection rate</td><td class="value">${s3.collection.rate}</td></tr>
+    </tbody></table>
+    <div class="section-title">3.6 Risk adjustment</div>
+    <table><tbody>
+      <tr><td class="label">Method</td><td class="value">${s3.risk_adjustment.method}</td></tr>
+      <tr><td class="label">Cost of capital rate</td><td class="value">${s3.risk_adjustment.coc_rate}</td></tr>
+      <tr><td class="label">Capital base</td><td class="value">${s3.risk_adjustment.capital_base}</td></tr>
+      <tr><td class="label">Annual RA</td><td class="value">${s3.risk_adjustment.annual_ra}</td></tr>
+    </tbody></table>`;
+
+  // Section 4
+  const s4 = avr.section4;
+  document.getElementById('s4-content').innerHTML=`
+    <table><tbody>
+      <tr><td class="label">IFRS 17 model applied</td><td class="value">${s4.ifrs17_model}</td></tr>
+      <tr><td class="label">PAA eligibility</td><td class="value">${s4.paa_eligibility}</td></tr>
+      <tr><td class="label">Building Block 1</td><td class="value">${s4.building_blocks.block1}</td></tr>
+      <tr><td class="label">Building Block 2</td><td class="value">${s4.building_blocks.block2}</td></tr>
+      <tr><td class="label">Building Block 3</td><td class="value">${s4.building_blocks.block3}</td></tr>
+      <tr><td class="label">Projection method</td><td class="value">${s4.projection_method}</td></tr>
+      <tr><td class="label">Decrement model</td><td class="value">${s4.decrement_model}</td></tr>
+      <tr><td class="label">Coverage units</td><td class="value">${s4.coverage_units}</td></tr>
+      <tr><td class="label">CSM release method</td><td class="value">${s4.csm_release}</td></tr>
+      <tr><td class="label">Onerous contract test</td><td class="value">${s4.onerous_test}</td></tr>
+      <tr><td class="label">Transition approach</td><td class="value">${s4.transition_approach}</td></tr>
+    </tbody></table>`;
+
+  // Section 5
+  const lf = s5.lrc_rollforward;
+
+  // 5.5 Non-life claims reserves (Motor/Fire/Accident/Others) — built separately
+  // since it's an optional, defensively-loaded section (reads live PIC workbooks).
+  function nonLifeRow(cls, row) {
+    return `<tr><td>${cls}</td><td>${fmtc(row.ibnr)}</td><td>${fmtc(row.ocr)}</td>` +
+           `<td>${fmtc(row.ulae)}</td><td>${fmtc(row.upr)}</td><td>${fmtc(row.dac)}</td></tr>`;
+  }
+  function nonLifeTable(basis, label) {
+    let rows = s5nl.classes.map(cls => nonLifeRow(cls, s5nl.by_class[cls][basis])).join('');
+    const t = s5nl.totals[basis];
+    rows += `<tr style="font-weight:bold;background:#f0f7f0"><td>Total</td><td>${fmtc(t.ibnr)}</td>` +
+            `<td>${fmtc(t.ocr)}</td><td>${fmtc(t.ulae)}</td><td>${fmtc(t.upr)}</td><td>${fmtc(t.dac)}</td></tr>`;
+    return `<div style="font-weight:bold;margin:10px 0 4px">${label}</div>
+      <table><thead><tr><th>Class of business</th><th>IBNR (GHS)</th><th>OCR (GHS)</th><th>ULAE (GHS)</th><th>UPR (GHS)</th><th>DAC (GHS)</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  }
+  const nonLifeHtml = !s5nl ? '' : (
+    '<div class="section-title">5.5 Non-life claims reserves (general insurance)</div>' +
+    (s5nl.available
+      ? nonLifeTable('gross', 'Gross') + nonLifeTable('net', 'Net') + nonLifeTable('ri', 'RI (ceded to reinsurers)') +
+        '<div style="margin-top:8px;font-size:12px;color:#888">ULAE is not reinsured — RI ULAE is always GHS 0.00.</div>'
+      : `<p style="color:#b00">Non-life reserving data unavailable: ${s5nl.error || 'unknown error'}</p>`)
+  );
+
+  document.getElementById('s5-content').innerHTML=`
+    <div class="section-title">5.1 Liability for remaining coverage (LRC) — GMM</div>
+    <table><thead><tr><th>Component</th><th>GHS</th></tr></thead><tbody>
+      <tr><td>PVFCF (Building Block 1)</td><td>${fmtc(s5.lrc.pvfcf)}</td></tr>
+      <tr><td>Risk adjustment (Building Block 2)</td><td>${fmtc(s5.lrc.risk_adjustment)}</td></tr>
+      <tr><td>CSM (Building Block 3)</td><td>${fmtc(s5.lrc.csm)}</td></tr>
+      <tr style="background:#f0f7f0;font-weight:bold"><td><strong>Total LRC</strong></td><td>${fmtc(s5.lrc.total)}</td></tr>
+    </tbody></table>
+    <div class="section-title">5.2 Liability for incurred claims (LIC)</div>
+    <table><thead><tr><th>Component</th><th>GHS</th></tr></thead><tbody>
+      <tr><td>Best estimate of claims</td><td>${fmtc(s5.lic.best_estimate)}</td></tr>
+      <tr><td>Risk adjustment on LIC</td><td>${fmtc(s5.lic.risk_adjustment)}</td></tr>
+      <tr style="background:#f0f7f0;font-weight:bold"><td><strong>Total LIC</strong></td><td>${fmtc(s5.lic.total)}</td></tr>
+    </tbody></table>
+    <div class="section-title">5.3 Total insurance contract liabilities</div>
+    <table><tbody>
+      <tr><td class="label">Total liabilities (GHS)</td><td class="value">${fmtc(s5.total_liabilities)}</td></tr>
+      <tr><td class="label">Total liabilities (USD)</td><td class="value">USD ${fmt(s5.total_liabilities_usd)}</td></tr>
+      <tr><td class="label">Prior period</td><td class="value">${fmtc(s5.prior_period)}</td></tr>
+      <tr><td class="label">Movement</td><td class="value">${fmtc(s5.movement)}</td></tr>
+    </tbody></table>
+    <div class="section-title">5.4 LRC roll-forward</div>
+    <table><thead><tr><th>Movement</th><th>PVFCF (GHS)</th><th>RA (GHS)</th><th>CSM (GHS)</th><th>Total (GHS)</th></tr></thead><tbody>
+      <tr style="font-weight:bold"><td>Opening balance</td><td>${fmtc(lf.opening_pvfcf)}</td><td>${fmtc(lf.opening_ra)}</td><td>${fmtc(lf.opening_csm)}</td><td>${fmtc(lf.opening_total)}</td></tr>
+      <tr><td>+ Premiums received</td><td>${fmtc(lf.premiums_received)}</td><td>—</td><td>—</td><td>${fmtc(lf.premiums_received)}</td></tr>
+      <tr><td>− Claims paid</td><td>${fmtc(lf.claims_paid)}</td><td>—</td><td>—</td><td>${fmtc(lf.claims_paid)}</td></tr>
+      <tr><td>+ Finance income</td><td>${fmtc(lf.finance_income)}</td><td>—</td><td>${fmtc(lf.csm_accretion)}</td><td>—</td></tr>
+      <tr><td>− RA release</td><td>—</td><td>${fmtc(lf.ra_release)}</td><td>—</td><td>${fmtc(lf.ra_release)}</td></tr>
+      <tr><td>− CSM amortisation</td><td>—</td><td>—</td><td>${fmtc(lf.csm_amortisation)}</td><td>${fmtc(lf.csm_amortisation)}</td></tr>
+      <tr style="font-weight:bold;background:#f0f7f0"><td>Closing balance</td><td>${fmtc(lf.closing_pvfcf)}</td><td>${fmtc(lf.closing_ra)}</td><td>${fmtc(lf.closing_csm)}</td><td>${fmtc(lf.closing_total)}</td></tr>
+    </tbody></table>
+    ${nonLifeHtml}`;
+
+  // Section 6
+  const ir = s6.insurance_revenue;
+  const ie = s6.insurance_expenses;
+  document.getElementById('s6-content').innerHTML=`
+    <div class="section-title">6.1 Insurance revenue</div>
+    <table><tbody>
+      <tr><td class="label">CSM amortisation</td><td class="value good">${fmtc(ir.csm_amortisation)}</td></tr>
+      <tr><td class="label">RA release</td><td class="value good">${fmtc(ir.ra_release)}</td></tr>
+      <tr><td class="label">Expected claims released</td><td class="value">${fmtc(ir.expected_claims)}</td></tr>
+      <tr><td class="label">Experience adjustments</td><td class="value">${fmtc(ir.experience_adj)}</td></tr>
+      <tr style="font-weight:bold"><td class="label"><strong>Total insurance revenue</strong></td><td class="value good">${fmtc(ir.total)}</td></tr>
+    </tbody></table>
+    <div class="section-title">6.2 Insurance service expenses</div>
+    <table><tbody>
+      <tr><td class="label">Incurred claims</td><td class="value bad">${fmtc(ie.incurred_claims)}</td></tr>
+      <tr><td class="label">Acquisition costs</td><td class="value">${fmtc(ie.acquisition_costs)}</td></tr>
+      <tr><td class="label">Other insurance expenses</td><td class="value">${fmtc(ie.other_expenses)}</td></tr>
+      <tr style="font-weight:bold"><td class="label"><strong>Total insurance expenses</strong></td><td class="value bad">${fmtc(ie.total)}</td></tr>
+    </tbody></table>
+    <div class="section-title">6.3 Insurance service result</div>
+    <table><tbody>
+      <tr style="font-weight:bold;background:#f0f7f0"><td class="label"><strong>Insurance service result</strong></td><td class="value good" style="font-size:16px">${fmtc(s6.insurance_service_result)}</td></tr>
+      <tr><td class="label">Insurance finance income/(expense)</td><td class="value">${fmtc(s6.finance_income.total)}</td></tr>
+      <tr style="font-weight:bold"><td class="label"><strong>Total comprehensive income</strong></td><td class="value good">${fmtc(s6.total_comprehensive_income)}</td></tr>
+    </tbody></table>`;
+
+  // Section 7
+  document.getElementById('s7-content').innerHTML=`
+    <table><thead><tr><th>Component</th><th>GHS</th></tr></thead><tbody>
+      <tr style="font-weight:bold"><td>Opening CSM</td><td>${fmtc(s7.opening_csm)}</td></tr>
+      <tr><td>+ Interest accretion (locked-in rate: ${s7.locked_in_rate})</td><td>${fmtc(s7.interest_accretion)}</td></tr>
+      <tr><td>± Changes in non-financial assumptions</td><td>${fmtc(s7.changes_estimates)}</td></tr>
+      <tr><td>− CSM amortisation</td><td>${fmtc(s7.csm_amortisation)}</td></tr>
+      <tr style="font-weight:bold;background:#f0f7f0"><td><strong>Closing CSM</strong></td><td>${fmtc(s7.closing_csm)}</td></tr>
+    </tbody></table>
+    <div style="margin-top:12px;padding:12px;background:#FFF2CC;border-radius:6px;font-size:12px;color:#7B3F00">
+      <strong>Amortisation basis:</strong> ${s7.note}<br>
+      Coverage units this period: ${fmt(s7.coverage_units_period)} | Total remaining: ${fmt(s7.coverage_units_total)} | Amortisation rate: ${s7.amortisation_rate}%
+    </div>`;
+
+  // Section 8
+  const rm = s8.risk_modules;
+  const cc = s8.capital_composition;
+  document.getElementById('s8-content').innerHTML=`
+    <div class="section-title">8.1 Capital adequacy ratio</div>
+    <table><tbody>
+      <tr><td class="label">Available capital (GHS)</td><td class="value">${fmtc(s8.available_capital)}</td></tr>
+      <tr><td class="label">Required capital — SCR (GHS)</td><td class="value">${fmtc(s8.required_capital)}</td></tr>
+      <tr><td class="label">Surplus / (deficit) (GHS)</td><td class="value ${s8.is_solvent?'good':'bad'}">${fmtc(s8.surplus_deficit)}</td></tr>
+      <tr style="font-weight:bold"><td class="label"><strong>Capital adequacy ratio</strong></td><td class="value ${s8.is_solvent?'good':'bad'}" style="font-size:16px">${pct(s8.capital_adequacy_ratio)}</td></tr>
+      <tr><td class="label">Minimum CAR (NIC)</td><td class="value">${s8.minimum_car}</td></tr>
+      <tr style="font-weight:bold"><td class="label"><strong>Solvency status</strong></td><td class="value ${s8.is_solvent?'good':'bad'}">${s8.solvency_status}</td></tr>
+    </tbody></table>
+    <div class="section-title">8.2 Risk module charges</div>
+    <table><thead><tr><th>Risk module</th><th>Capital charge (GHS)</th></tr></thead><tbody>
+      <tr><td>Insurance risk</td><td>${fmtc(rm.insurance_risk)}</td></tr>
+      <tr><td>Market risk</td><td>${fmtc(rm.market_risk)}</td></tr>
+      <tr><td>Credit risk</td><td>${fmtc(rm.credit_risk)}</td></tr>
+      <tr><td>Operational risk</td><td>${fmtc(rm.operational_risk)}</td></tr>
+      <tr style="font-weight:bold"><td><strong>Total SCR</strong></td><td>${fmtc(rm.total_scr)}</td></tr>
+    </tbody></table>
+    <div class="section-title">8.3 Available capital composition</div>
+    <table><tbody>
+      <tr><td class="label">Tier 1 capital (core)</td><td class="value">${fmtc(cc.tier1_capital)}</td></tr>
+      <tr><td class="label">Tier 2 capital (supplementary)</td><td class="value">${fmtc(cc.tier2_capital)}</td></tr>
+      <tr style="font-weight:bold"><td class="label"><strong>Total available capital</strong></td><td class="value">${fmtc(cc.total_available)}</td></tr>
+    </tbody></table>`;
+
+  // Section 9
+  const s9 = avr.section9;
+  document.getElementById('s9-content').innerHTML=`
+    <div class="opinion-box" style="white-space:pre-line">${s9.opinion}</div>
+    <div class="sig-box">
+      <p style="font-size:14px;margin-bottom:8px"><strong>${s9.appointed_actuary}</strong></p>
+      <p style="color:#666;margin-bottom:4px">Appointed Actuary</p>
+      <p style="color:#666;margin-bottom:4px">${s9.consulting_firm}</p>
+      <p style="color:#666;margin-bottom:16px">${s9.qualifications}</p>
+      <p style="border-top:1px solid #ccc;padding-top:12px;color:#999">Signed: ________________________________</p>
+      <p style="color:#999;margin-top:8px">Date: ${s9.report_date}</p>
+    </div>`;
+}
+
+function printReport(){
+  window.print();
+}
+
+function exportWord(){
+  if(!AVR){alert('Generate the report first.'); return;}
+  alert('Word export: The API generates a .docx file.\n\nTo enable this feature, add python-docx to requirements.txt and call:\nGET http://localhost:8000/nic/avr/export-word\n\nThis is the next module to build.');
+}
+</script>
+</body>
+</html>

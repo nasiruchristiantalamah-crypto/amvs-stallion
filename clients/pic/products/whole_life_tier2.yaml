@@ -1,0 +1,37 @@
+name: "Ghana Whole Life — Tier 2 Standard"
+policy_term_years: null
+premium_mode: "monthly"
+measurement_model: "gmm"
+
+riders:
+  - rider_type: "death"
+    name: "Death Benefit"
+    benefit_main: 10000
+    benefit_dependant: 10000
+    incidence_basis: "mortality"
+
+  - rider_type: "tpd"
+    name: "Total & Permanent Disability"
+    benefit_main: 10000
+    benefit_dependant: 10000
+    incidence_basis: "incidence"
+    annual_incidence_rate: 0.0010
+
+  - rider_type: "hospitalization"
+    name: "Hospitalization Cash Benefit"
+    benefit_main: 200
+    benefit_dependant: 0
+    incidence_basis: "incidence"
+    annual_incidence_rate: 0.0025
+    avg_events_per_year: 5.0
+
+  - rider_type: "funeral"
+    name: "Funeral Support Benefit"
+    benefit_main: 2000
+    benefit_dependant: 2000
+    incidence_basis: "mortality"
+
+dependants:
+  - relationship: "spouse"
+    age_offset: -3
+    benefit_multiplier: 1.0

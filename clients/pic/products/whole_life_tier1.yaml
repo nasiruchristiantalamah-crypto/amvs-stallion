@@ -1,0 +1,37 @@
+name: "Ghana Whole Life — Tier 1 Basic"
+policy_term_years: null   # whole life — runs to assumptions.max_age
+premium_mode: "monthly"
+measurement_model: "gmm"
+
+riders:
+  - rider_type: "death"
+    name: "Death Benefit"
+    benefit_main: 5000
+    benefit_dependant: 5000
+    incidence_basis: "mortality"
+
+  - rider_type: "tpd"
+    name: "Total & Permanent Disability"
+    benefit_main: 5000
+    benefit_dependant: 5000
+    incidence_basis: "incidence"
+    annual_incidence_rate: 0.0010   # 0.10% per annum
+
+  - rider_type: "hospitalization"
+    name: "Hospitalization Cash Benefit"
+    benefit_main: 100          # GHS per day
+    benefit_dependant: 0       # main life only
+    incidence_basis: "incidence"
+    annual_incidence_rate: 0.0025   # 0.25% per annum
+    avg_events_per_year: 5.0        # average days per hospitalization episode
+
+  - rider_type: "funeral"
+    name: "Funeral Support Benefit"
+    benefit_main: 1000
+    benefit_dependant: 1000
+    incidence_basis: "mortality"
+
+dependants:
+  - relationship: "spouse"
+    age_offset: -3
+    benefit_multiplier: 1.0

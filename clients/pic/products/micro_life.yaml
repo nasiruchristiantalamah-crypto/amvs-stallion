@@ -1,0 +1,30 @@
+name: "Ghana Micro Life Insurance"
+policy_term_years: 2   # short-duration — PAA eligible
+premium_mode: "monthly"
+measurement_model: "paa"
+
+riders:
+  - rider_type: "death"
+    name: "Death Benefit"
+    benefit_main: 5000
+    benefit_dependant: 5000
+    incidence_basis: "mortality"
+
+  - rider_type: "hospitalization"
+    name: "Hospitalization Cash Benefit"
+    benefit_main: 50
+    benefit_dependant: 0
+    incidence_basis: "incidence"
+    annual_incidence_rate: 0.0025
+    avg_events_per_year: 5.0
+
+  - rider_type: "funeral"
+    name: "Funeral Support Benefit"
+    benefit_main: 500
+    benefit_dependant: 500
+    incidence_basis: "mortality"
+
+dependants:
+  - relationship: "spouse"
+    age_offset: -3
+    benefit_multiplier: 1.0

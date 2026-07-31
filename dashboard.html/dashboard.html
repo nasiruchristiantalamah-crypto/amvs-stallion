@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AMVS — Ghana Actuarial Modelling & Valuation System</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f5f5f5; color: #333; font-size: 14px; }
+
+  /* ── Layout ── */
+  .shell { display: grid; grid-template-columns: 210px 1fr; min-height: 100vh; }
+  .sidebar { background: #1F3864; color: white; padding: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .main { padding: 24px; overflow: auto; }
+
+  /* ── Sidebar ── */
+  .logo { padding: 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .logo-title { font-size: 16px; font-weight: bold; color: white; }
+  .logo-sub   { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; color: rgba(255,255,255,0.7); font-size: 13px; border-left: 3px solid transparent; transition: all .15s; }
+  .nav-item:hover  { background: rgba(255,255,255,0.08); color: white; }
+  .nav-item.active { background: rgba(255,255,255,0.12); color: white; border-left-color: #C9A84C; font-weight: bold; }
+  .nav-icon { font-size: 18px; }
+  .api-dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; display: inline-block; margin-right: 6px; }
+  .api-dot.online  { background: #4CAF50; }
+  .api-dot.offline { background: #f44336; }
+  .sidebar-footer { padding: 16px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: rgba(255,255,255,0.4); margin-top: auto; }
+
+  /* ── Pages ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── Top bar ── */
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .page-title { font-size: 20px; font-weight: bold; color: #1F3864; }
+  .badge { background: #E2EFDA; color: #375623; font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: bold; }
+  .badge-blue { background: #D9E1F2; color: #1F3864; font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: bold; }
+
+  /* ── Metric cards ── */
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .cards-3 { grid-template-columns: repeat(3, 1fr); }
+  .card { background: white; border-radius: 8px; padding: 16px; border: 1px solid #e0e0e0; }
+  .card-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .card-value { font-size: 22px; font-weight: bold; color: #1F3864; }
+  .card-sub { font-size: 11px; color: #aaa; margin-top: 4px; }
+
+  /* ── Panels ── */
+  .panel { background: white; border-radius: 8px; border: 1px solid #e0e0e0; padding: 20px; margin-bottom: 16px; }
+  .panel-title { font-size: 14px; font-weight: bold; color: #1F3864; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+
+  /* ── Forms ── */
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group label { font-size: 12px; color: #555; font-weight: bold; }
+  select, input[type="text"], input[type="number"] { width: 100%; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; color: #333; background: white; }
+  select:focus, input:focus { outline: none; border-color: #2E5090; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold; border: 1px solid #ddd; background: white; color: #333; transition: all .15s; }
+  .btn:hover { background: #f5f5f5; }
+  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn-primary { background: #2E5090; border-color: #2E5090; color: white; }
+  .btn-primary:hover { background: #1F3864; }
+  .btn-gold { background: #C9A84C; border-color: #C9A84C; color: white; }
+  .btn-gold:hover { background: #B8973B; }
+
+  /* ── Results ── */
+  .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .result-block { background: #f9f9f9; border-radius: 6px; padding: 14px; border: 1px solid #eee; }
+  .result-block-title { font-size: 11px; font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+  .result-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+  .result-row:last-child { border-bottom: none; }
+  .result-label { font-size: 12px; color: #666; }
+  .result-value { font-size: 13px; font-weight: bold; color: #333; }
+  .good  { color: #2e7d32; }
+  .bad   { color: #c62828; }
+  .warn  { color: #e65100; }
+
+  /* ── Alerts ── */
+  .alert { padding: 10px 16px; border-radius: 6px; font-size: 13px; display: flex; align-items: center; gap: 10px; margin-bottom: 16px; display: none; }
+  .alert-success { background: #E2EFDA; border: 1px solid #375623; color: #375623; }
+  .alert-danger  { background: #FFE0E0; border: 1px solid #c62828; color: #c62828; }
+  .alert-info    { background: #D9E1F2; border: 1px solid #1F3864; color: #1F3864; }
+
+  /* ── Tabs ── */
+  .tab-bar { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0; }
+  .tab { padding: 8px 16px; font-size: 13px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: bold; }
+  .tab:hover { color: #1F3864; }
+  .tab.active { color: #2E5090; border-bottom-color: #2E5090; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; background: #1F3864; color: white; font-size: 12px; }
+  td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; }
+  tr:hover td { background: #f9f9f9; }
+  .td-prem { color: #2E5090; font-weight: bold; }
+
+  /* ── Spinner ── */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; }
+  .spinner-dark { border-color: rgba(0,0,0,0.2); border-top-color: #2E5090; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Two-col layout ── */
+  .two-col { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
+  .two-col-wide { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
+  .form-col { display: flex; flex-direction: column; gap: 12px; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- ══ SIDEBAR ══ -->
+  <div class="sidebar">
+    <div class="logo">
+      <div class="logo-title">AMVS</div>
+      <div class="logo-sub">Ghana Actuarial Modelling<br>& Valuation System</div>
+      <div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.4)">Stallion Consultants Ltd</div>
+    </div>
+
+    <div style="padding:8px 0">
+      <div class="nav-item active" onclick="showPage('pricing',this)">
+        <span class="nav-icon">💰</span> Pricing
+      </div>
+      <div class="nav-item" onclick="showPage('ifrs17',this)">
+        <span class="nav-icon">📊</span> IFRS 17
+      </div>
+      <div class="nav-item" onclick="showPage('ratetable',this)">
+        <span class="nav-icon">📋</span> Rate table
+      </div>
+      <div class="nav-item" onclick="showPage('nic',this)">
+        <span class="nav-icon">🏛️</span> NIC report
+      </div>
+      <div class="nav-item" onclick="showPage('reserving',this)">
+        <span class="nav-icon">📐</span> Reserving
+      </div>
+      <div class="nav-item" onclick="showPage('assumptions',this)">
+        <span class="nav-icon">⚙️</span> Assumptions
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div><span class="api-dot" id="api-dot"></span><span id="api-status">Checking API...</span></div>
+      <div style="margin-top:4px">http://localhost:8000</div>
+    </div>
+  </div>
+
+  <!-- ══ MAIN ══ -->
+  <div class="main">
+
+    <!-- ── PRICING PAGE ── -->
+    <div class="page active" id="page-pricing">
+      <div class="topbar">
+        <div class="page-title">⚡ Actuarial Pricing</div>
+        <span class="badge">Ghana Whole Life & Micro Life</span>
+      </div>
+
+      <div class="cards" id="pricing-cards">
+        <div class="card">
+          <div class="card-label">Monthly premium</div>
+          <div class="card-value" id="c-premium">—</div>
+          <div class="card-sub">GHS per policy</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Annual premium</div>
+          <div class="card-value" id="c-annual">—</div>
+          <div class="card-sub">GHS per year</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Profit margin</div>
+          <div class="card-value" id="c-margin">—</div>
+          <div class="card-sub">Target: 15%</div>
+        </div>
+        <div class="card">
+          <div class="card-label">CSM at inception</div>
+          <div class="card-value" id="c-csm">—</div>
+          <div class="card-sub">Unearned profit (GHS)</div>
+        </div>
+      </div>
+
+      <div class="alert alert-danger" id="alert-onerous">
+        ⚠️ Contract is ONEROUS — expected loss must be recognised immediately in P&L under IFRS 17.
+      </div>
+      <div class="alert alert-success" id="alert-ok">
+        ✓ <span id="alert-ok-msg">Pricing complete</span>
+      </div>
+
+      <div class="two-col-wide">
+
+        <!-- Input form -->
+        <div class="panel">
+          <div class="panel-title">📥 Pricing inputs</div>
+          <div class="form-col">
+            <div class="form-group">
+              <label>Entry age (18–70)</label>
+              <input type="number" id="p-age" value="35" min="18" max="70">
+            </div>
+            <div class="form-group">
+              <label>Product tier</label>
+              <select id="p-tier">
+                <option value="1">Tier 1 — Basic (GHS 5,000 death benefit)</option>
+                <option value="2">Tier 2 — Standard (GHS 10,000 death benefit)</option>
+                <option value="3">Tier 3 — Premium (GHS 20,000 death benefit)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Product type</label>
+              <select id="p-product">
+                <option value="whole_life">Ghana Whole Life Insurance (GMM)</option>
+                <option value="micro_life">Ghana Micro Life Insurance (PAA)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Dependant covered</label>
+              <select id="p-dep">
+                <option value="spouse">Spouse</option>
+                <option value="parent">Parent</option>
+                <option value="child">Child</option>
+                <option value="none">None — main life only</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Mortality loading</label>
+              <select id="p-mort">
+                <option value="-0.20">−20% lighter (standard)</option>
+                <option value="0.00">0% — base table</option>
+                <option value="0.10">+10% heavier</option>
+                <option value="0.25">+25% stress scenario</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Target profit margin</label>
+              <select id="p-margin">
+                <option value="0.15">15% (standard)</option>
+                <option value="0.10">10%</option>
+                <option value="0.20">20%</option>
+                <option value="0.25">25%</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="runPricing()" id="btn-price">
+              ▶ Run pricing
+            </button>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div>
+          <div class="panel">
+            <div class="panel-title">📈 Results</div>
+            <div class="results-grid">
+              <div class="result-block">
+                <div class="result-block-title">Present values (GHS)</div>
+                <div class="result-row"><span class="result-label">PV Premiums</span><span class="result-value" id="r-pvprem">—</span></div>
+                <div class="result-row"><span class="result-label">PV Benefits</span><span class="result-value" id="r-pvben">—</span></div>
+                <div class="result-row"><span class="result-label">PV Expenses</span><span class="result-value" id="r-pvexp">—</span></div>
+                <div class="result-row"><span class="result-label">PV Profits</span><span class="result-value good" id="r-pvprof">—</span></div>
+              </div>
+              <div class="result-block">
+                <div class="result-block-title">IFRS 17 building blocks</div>
+                <div class="result-row"><span class="result-label">PVFCF</span><span class="result-value" id="r-pvfcf">—</span></div>
+                <div class="result-row"><span class="result-label">Risk adjustment</span><span class="result-value" id="r-ra">—</span></div>
+                <div class="result-row"><span class="result-label">CSM at inception</span><span class="result-value good" id="r-csm2">—</span></div>
+                <div class="result-row"><span class="result-label">LRC total</span><span class="result-value" id="r-lrc">—</span></div>
+              </div>
+              <div class="result-block">
+                <div class="result-block-title">Decrement summary</div>
+                <div class="result-row"><span class="result-label">Months projected</span><span class="result-value" id="r-months">—</span></div>
+                <div class="result-row"><span class="result-label">Expected deaths</span><span class="result-value" id="r-deaths">—</span></div>
+                <div class="result-row"><span class="result-label">Year-1 lapse rate</span><span class="result-value" id="r-lapse">—</span></div>
+                <div class="result-row"><span class="result-label">USD premium equiv.</span><span class="result-value" id="r-usd">—</span></div>
+              </div>
+              <div class="result-block">
+                <div class="result-block-title">Onerous contract test</div>
+                <div class="result-row"><span class="result-label">Contract status</span><span class="result-value" id="r-status">—</span></div>
+                <div class="result-row"><span class="result-label">Loss component</span><span class="result-value bad" id="r-loss">—</span></div>
+                <div class="result-row"><span class="result-label">Measurement model</span><span class="result-value" id="r-model">—</span></div>
+                <div class="result-row"><span class="result-label">Calc time</span><span class="result-value" id="r-time">—</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── IFRS 17 PAGE ── -->
+    <div class="page" id="page-ifrs17">
+      <div class="topbar">
+        <div class="page-title">📊 IFRS 17 Valuation</div>
+        <span class="badge-blue">Annual & Quarterly</span>
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-title">🏢 Valuation inputs</div>
+          <div class="form-col">
+            <div class="form-group"><label>Company name</label><input type="text" id="i-company" value="Quality Insurance PLC"></div>
+            <div class="form-group"><label>Reporting period</label><input type="text" id="i-period" value="FY2025"></div>
+            <div class="form-group">
+              <label>Reporting frequency</label>
+              <select id="i-freq">
+                <option value="annual">Annual (31 December)</option>
+                <option value="quarterly">Quarterly (NIC submission)</option>
+              </select>
+            </div>
+            <div class="form-group"><label>Number of in-force policies</label><input type="number" id="i-count" value="500" min="1"></div>
+            <div class="form-group"><label>Representative entry age</label><input type="number" id="i-age" value="35" min="18" max="70"></div>
+            <div class="form-group">
+              <label>Product tier</label>
+              <select id="i-tier">
+                <option value="1">Tier 1 — Basic</option>
+                <option value="2">Tier 2 — Standard</option>
+                <option value="3">Tier 3 — Premium</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" onclick="runIFRS17()" id="btn-ifrs">▶ Run valuation</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="cards cards-3" style="margin-bottom:16px">
+            <div class="card"><div class="card-label">Total liabilities</div><div class="card-value" id="i-totliab">—</div><div class="card-sub">GHS</div></div>
+            <div class="card"><div class="card-label">Insurance revenue</div><div class="card-value" id="i-rev">—</div><div class="card-sub">GHS (period)</div></div>
+            <div class="card"><div class="card-label">Capital adequacy</div><div class="card-value" id="i-car">—</div><div class="card-sub">CAR %</div></div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-title">📋 Detailed results</div>
+            <div class="tab-bar">
+              <div class="tab active" onclick="showTab('lrc',this)">LRC</div>
+              <div class="tab" onclick="showTab('lic',this)">LIC</div>
+              <div class="tab" onclick="showTab('pnl',this)">P&L</div>
+              <div class="tab" onclick="showTab('csm',this)">CSM roll-forward</div>
+              <div class="tab" onclick="showTab('solv',this)">Solvency</div>
+            </div>
+
+            <div class="tab-content active" id="tab-lrc">
+              <div class="result-block">
+                <div class="result-block-title">Liability for remaining coverage (GMM)</div>
+                <div class="result-row"><span class="result-label">PVFCF (Building Block 1)</span><span class="result-value" id="i-pvfcf">—</span></div>
+                <div class="result-row"><span class="result-label">Risk adjustment (Building Block 2)</span><span class="result-value" id="i-ra">—</span></div>
+                <div class="result-row"><span class="result-label">CSM (Building Block 3)</span><span class="result-value good" id="i-csm">—</span></div>
+                <div class="result-row"><span class="result-label">Total LRC (GHS)</span><span class="result-value" id="i-lrctot">—</span></div>
+                <div class="result-row"><span class="result-label">Total LRC (USD)</span><span class="result-value" id="i-lrcusd">—</span></div>
+              </div>
+            </div>
+
+            <div class="tab-content" id="tab-lic">
+              <div class="result-block">
+                <div class="result-block-title">Liability for incurred claims</div>
+                <div class="result-row"><span class="result-label">Best estimate of claims</span><span class="result-value" id="i-licbe">—</span></div>
+                <div class="result-row"><span class="result-label">Risk adjustment on LIC</span><span class="result-value" id="i-licra">—</span></div>
+                <div class="result-row"><span class="result-label">Total LIC (GHS)</span><span class="result-value" id="i-lictot">—</span></div>
+              </div>
+            </div>
+
+            <div class="tab-content" id="tab-pnl">
+              <div class="result-block">
+                <div class="result-block-title">Insurance service result (IFRS 17 P&L)</div>
+                <div class="result-row"><span class="result-label">Insurance revenue</span><span class="result-value good" id="i-pnlrev">—</span></div>
+                <div class="result-row"><span class="result-label">Insurance service expenses</span><span class="result-value bad" id="i-pnlexp">—</span></div>
+                <div class="result-row"><span class="result-label">— of which: CSM amortisation</span><span class="result-value good" id="i-pnlcsm">—</span></div>
+                <div class="result-row"><span class="result-label">— of which: RA release</span><span class="result-value" id="i-pnlra">—</span></div>
+                <div class="result-row" style="background:#f0f7f0"><span class="result-label"><strong>Insurance service result</strong></span><span class="result-value good" id="i-isr">—</span></div>
+              </div>
+            </div>
+
+            <div class="tab-content" id="tab-csm">
+              <div class="result-block">
+                <div class="result-block-title">CSM roll-forward (IFRS 17 Para. 44)</div>
+                <div class="result-row"><span class="result-label">Opening CSM</span><span class="result-value" id="i-csmopen">—</span></div>
+                <div class="result-row"><span class="result-label">+ Interest accretion (locked-in rate)</span><span class="result-value good" id="i-csmint">—</span></div>
+                <div class="result-row"><span class="result-label">− CSM amortisation (coverage units)</span><span class="result-value bad" id="i-csmamort">—</span></div>
+                <div class="result-row" style="background:#f0f7f0"><span class="result-label"><strong>Closing CSM</strong></span><span class="result-value good" id="i-csmclose">—</span></div>
+              </div>
+            </div>
+
+            <div class="tab-content" id="tab-solv">
+              <div class="result-block">
+                <div class="result-block-title">Solvency / capital adequacy (NIC GIRBC)</div>
+                <div class="result-row"><span class="result-label">Available capital</span><span class="result-value" id="i-avcap">—</span></div>
+                <div class="result-row"><span class="result-label">Required capital (SCR)</span><span class="result-value" id="i-reqcap">—</span></div>
+                <div class="result-row"><span class="result-label">Surplus / (deficit)</span><span class="result-value" id="i-surplus">—</span></div>
+                <div class="result-row"><span class="result-label">Capital adequacy ratio</span><span class="result-value" id="i-carrow">—</span></div>
+                <div class="result-row" style="background:#f0f7f0"><span class="result-label"><strong>Solvency status</strong></span><span class="result-value" id="i-solvent">—</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RATE TABLE PAGE ── -->
+    <div class="page" id="page-ratetable">
+      <div class="topbar">
+        <div class="page-title">📋 Premium Rate Table</div>
+        <span class="badge">All ages 18–70</span>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">⚙️ Table settings</div>
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="flex:0 0 200px">
+            <label>Product tier</label>
+            <select id="rt-tier">
+              <option value="1">Tier 1 — Basic</option>
+              <option value="2">Tier 2 — Standard</option>
+              <option value="3">Tier 3 — Premium</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:0 0 220px">
+            <label>Product type</label>
+            <select id="rt-product">
+              <option value="whole_life">Ghana Whole Life (GMM)</option>
+              <option value="micro_life">Ghana Micro Life (PAA)</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:0 0 100px">
+            <label>From age</label>
+            <input type="number" id="rt-from" value="18" min="18" max="70">
+          </div>
+          <div class="form-group" style="flex:0 0 100px">
+            <label>To age</label>
+            <input type="number" id="rt-to" value="70" min="18" max="70">
+          </div>
+          <button class="btn btn-gold" onclick="runRateTable()" id="btn-rt">▶ Generate rate table</button>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#888">
+          ⏱ Note: Generating ages 18–70 takes about 30–60 seconds. The engine is solving for the premium at each age.
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">
+          📊 Premium rates
+          <span id="rt-info" style="font-size:12px;color:#888;font-weight:normal;margin-left:12px"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Age</th>
+                <th>Monthly premium (GHS)</th>
+                <th>Annual premium (GHS)</th>
+                <th>Profit margin</th>
+                <th>CSM at inception (GHS)</th>
+                <th>LRC total (GHS)</th>
+                <th>Onerous?</th>
+              </tr>
+            </thead>
+            <tbody id="rt-body">
+              <tr><td colspan="7" style="text-align:center;color:#aaa;padding:30px">Click "Generate rate table" to see results</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── NIC REPORT PAGE ── -->
+    <div class="page" id="page-nic">
+      <div class="topbar">
+        <div class="page-title">🏛️ NIC Regulatory Report</div>
+        <span class="badge">GIRBC 2025</span>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Coming next</div>
+        <p style="color:#666;font-size:13px;line-height:1.8;margin-bottom:16px">
+          The NIC report module will generate the complete quarterly and annual regulatory submission package in the exact format required by the National Insurance Commission of Ghana.
+        </p>
+        <p style="color:#666;font-size:13px;line-height:1.8;margin-bottom:16px">
+          <strong>What it will produce:</strong><br>
+          ✓ IFRS 17 balance sheet disclosures<br>
+          ✓ Insurance service result (P&L note)<br>
+          ✓ CSM roll-forward table<br>
+          ✓ LRC and LIC breakdown<br>
+          ✓ Capital Adequacy Ratio (CAR)<br>
+          ✓ GIRBC solvency worksheets<br>
+          ✓ Actuarial certificate attachment<br>
+          ✓ Quarterly submission package (Q1–Q4)
+        </p>
+        <p style="color:#666;font-size:13px">Run an IFRS 17 valuation first, then return here to generate the NIC report.</p>
+      </div>
+    </div>
+
+    <!-- ── NON-LIFE RESERVING PAGE ── -->
+    <div class="page" id="page-reserving">
+      <div class="topbar">
+        <div class="page-title">📐 Non-Life Reserving — NIC Summary</div>
+        <span class="badge">Provident Insurance (PIC) — Motor / Fire / Accident / Others</span>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">⚙️ Source data</div>
+        <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
+          Reads PIC's own claims triangles, outstanding claims register, UPR/DAC, and ULAE
+          workbooks directly and runs Chain Ladder IBNR for each class of business.
+        </p>
+        <button class="btn btn-gold" onclick="runNicSummary()" id="btn-nic-summary">▶ Load NIC summary</button>
+        <span id="nic-summary-info" style="font-size:12px;color:#888;margin-left:12px"></span>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">Gross</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Class of business</th><th>IBNR</th><th>OCR</th><th>ULAE</th><th>UPR</th><th>DAC</th></tr></thead>
+            <tbody id="nic-gross-body">
+              <tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">Click "Load NIC summary" to see results</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">Net</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Class of business</th><th>IBNR</th><th>OCR</th><th>ULAE</th><th>UPR</th><th>DAC</th></tr></thead>
+            <tbody id="nic-net-body">
+              <tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">RI (ceded to reinsurers)</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Class of business</th><th>IBNR</th><th>OCR</th><th>ULAE</th><th>UPR</th><th>DAC</th></tr></thead>
+            <tbody id="nic-ri-body">
+              <tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#888">
+          ULAE is not reinsured — RI ULAE is always shown as GHS 0.00, per PIC's own reporting convention.
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ASSUMPTIONS PAGE ── -->
+    <div class="page" id="page-assumptions">
+      <div class="topbar">
+        <div class="page-title">⚙️ Assumptions</div>
+        <span class="badge-blue">Current basis</span>
+      </div>
+
+      <div class="results-grid">
+        <div class="panel">
+          <div class="panel-title">💹 Economic assumptions</div>
+          <div class="result-row"><span class="result-label">Valuation interest rate (p.a.)</span><span class="result-value">16.5%</span></div>
+          <div class="result-row"><span class="result-label">Investment return (p.a.)</span><span class="result-value">14.0%</span></div>
+          <div class="result-row"><span class="result-label">Locked-in rate (IFRS 17 CSM)</span><span class="result-value">16.5%</span></div>
+          <div class="result-row"><span class="result-label">Expense inflation (p.a.)</span><span class="result-value">12.0%</span></div>
+          <div class="result-row"><span class="result-label">USD risk-free rate</span><span class="result-value">4.5%</span></div>
+          <div class="result-row"><span class="result-label">GHS/USD FX rate</span><span class="result-value">15.50</span></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">💸 Expenses & commissions</div>
+          <div class="result-row"><span class="result-label">Initial commission</span><span class="result-value">15% (Tier 1 & 2) / 12% (Tier 3)</span></div>
+          <div class="result-row"><span class="result-label">Renewal commission</span><span class="result-value">2%</span></div>
+          <div class="result-row"><span class="result-label">Premium collection rate</span><span class="result-value">70% (Tier 1) / 75% (Tier 2) / 80% (Tier 3)</span></div>
+          <div class="result-row"><span class="result-label">Policy fee (monthly)</span><span class="result-value">GHS 1.00 / 1.50 / 2.00</span></div>
+          <div class="result-row"><span class="result-label">Acquisition cost (one-time)</span><span class="result-value">GHS 8 / 12 / 18</span></div>
+          <div class="result-row"><span class="result-label">Renewal expense (annual)</span><span class="result-value">GHS 18 / 24 / 30</span></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">💀 Mortality</div>
+          <div class="result-row"><span class="result-label">Mortality table</span><span class="result-value">Ghana GNM 2020 (approximated)</span></div>
+          <div class="result-row"><span class="result-label">Standard loading</span><span class="result-value">−20% (lighter)</span></div>
+          <div class="result-row"><span class="result-label">Gender basis</span><span class="result-value">Unisex</span></div>
+          <div class="result-row"><span class="result-label">Maximum projection age</span><span class="result-value">80</span></div>
+          <div class="result-row"><span class="result-label">Year-1 lapse rate</span><span class="result-value">25%</span></div>
+          <div class="result-row"><span class="result-label">Ultimate lapse rate</span><span class="result-value">2% (year 13+)</span></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">🏥 Morbidity & risk adjustment</div>
+          <div class="result-row"><span class="result-label">TPD incidence rate (p.a.)</span><span class="result-value">0.10%</span></div>
+          <div class="result-row"><span class="result-label">Hospitalisation rate (p.a.)</span><span class="result-value">0.25%</span></div>
+          <div class="result-row"><span class="result-label">Average hospital stay</span><span class="result-value">5 days per episode</span></div>
+          <div class="result-row"><span class="result-label">RA method</span><span class="result-value">Cost of Capital (CoC)</span></div>
+          <div class="result-row"><span class="result-label">CoC rate</span><span class="result-value">6%</span></div>
+          <div class="result-row"><span class="result-label">Solvency capital</span><span class="result-value">GHS 500,000</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+
+function fmt(n) {
+  if (typeof n !== 'number') return n;
+  return n.toLocaleString('en-GH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function pct(n) {
+  if (typeof n !== 'number') return n;
+  return (n * 100).toFixed(2) + '%';
+}
+
+// Check if API is online
+async function checkAPI() {
+  try {
+    const r = await fetch(API + '/health', { signal: AbortSignal.timeout(3000) });
+    const d = await r.json();
+    document.getElementById('api-dot').className = 'api-dot online';
+    document.getElementById('api-status').textContent = 'API online ✓';
+  } catch (e) {
+    document.getElementById('api-dot').className = 'api-dot offline';
+    document.getElementById('api-status').textContent = 'API offline ✗';
+  }
+}
+checkAPI();
+setInterval(checkAPI, 10000); // Check every 10 seconds
+
+// Navigate between pages
+function showPage(id, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  el.classList.add('active');
+}
+
+// Switch tabs inside IFRS 17 page
+function showTab(id, el) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  el.classList.add('active');
+}
+
+// ── PRICING ──────────────────────────────────────────────────────────────────
+async function runPricing() {
+  const btn = document.getElementById('btn-price');
+  btn.innerHTML = '<span class="spinner"></span> Running...';
+  btn.disabled = true;
+  document.getElementById('alert-ok').style.display = 'none';
+  document.getElementById('alert-onerous').style.display = 'none';
+
+  const body = {
+    entry_age:         parseInt(document.getElementById('p-age').value),
+    tier:              parseInt(document.getElementById('p-tier').value),
+    product:           document.getElementById('p-product').value,
+    dependant:         document.getElementById('p-dep').value,
+    mortality_loading: parseFloat(document.getElementById('p-mort').value),
+    target_margin:     parseFloat(document.getElementById('p-margin').value),
+  };
+
+  try {
+    const r = await fetch(API + '/pricing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const data = d.data;
+    const dec = data.decrement_summary;
+
+    // Top cards
+    document.getElementById('c-premium').textContent = 'GHS ' + fmt(data.monthly_premium);
+    document.getElementById('c-annual').textContent  = 'GHS ' + fmt(data.annual_premium);
+    document.getElementById('c-margin').textContent  = pct(data.profit_margin);
+    document.getElementById('c-csm').textContent     = 'GHS ' + fmt(data.csm_at_inception);
+
+    // PV results
+    document.getElementById('r-pvprem').textContent = 'GHS ' + fmt(data.pv_premiums);
+    document.getElementById('r-pvben').textContent  = 'GHS ' + fmt(data.pv_benefits);
+    document.getElementById('r-pvexp').textContent  = 'GHS ' + fmt(data.pv_expenses);
+    document.getElementById('r-pvprof').textContent = 'GHS ' + fmt(data.pv_profits);
+
+    // IFRS 17 building blocks
+    document.getElementById('r-pvfcf').textContent = 'GHS ' + fmt(data.pvfcf);
+    document.getElementById('r-ra').textContent    = 'GHS ' + fmt(data.risk_adjustment);
+    document.getElementById('r-csm2').textContent  = 'GHS ' + fmt(data.csm_at_inception);
+    document.getElementById('r-lrc').textContent   = 'GHS ' + fmt(data.lrc_total);
+
+    // Decrement
+    document.getElementById('r-months').textContent = dec.total_months;
+    document.getElementById('r-deaths').textContent = dec.total_deaths_main.toFixed(4);
+    document.getElementById('r-lapse').textContent  = pct(dec.first_year_lapse);
+    document.getElementById('r-usd').textContent    = 'USD ' + data.monthly_premium_usd;
+
+    // Onerous test
+    const statusEl = document.getElementById('r-status');
+    statusEl.textContent  = data.is_onerous ? 'ONEROUS ⚠️' : 'Not onerous ✓';
+    statusEl.className    = 'result-value ' + (data.is_onerous ? 'bad' : 'good');
+    document.getElementById('r-loss').textContent  = 'GHS ' + fmt(data.loss_component);
+    document.getElementById('r-model').textContent = body.product === 'micro_life' ? 'PAA' : 'GMM';
+    document.getElementById('r-time').textContent  = data.elapsed_seconds + 's';
+
+    // Alert
+    if (data.is_onerous) {
+      document.getElementById('alert-onerous').style.display = 'flex';
+    } else {
+      document.getElementById('alert-ok').style.display = 'flex';
+      document.getElementById('alert-ok-msg').textContent =
+        `Pricing complete — Age ${body.entry_age}, Tier ${body.tier} | ` +
+        `GHS ${fmt(data.monthly_premium)}/month at ${pct(data.profit_margin)} profit margin`;
+    }
+
+  } catch (e) {
+    alert('❌ Error: ' + e.message + '\n\nMake sure your API is running in VS Code:\ncd amvs\npython -m uvicorn api.main:app --reload --port 8000');
+  }
+
+  btn.innerHTML = '▶ Run pricing';
+  btn.disabled = false;
+}
+
+// ── IFRS 17 ──────────────────────────────────────────────────────────────────
+async function runIFRS17() {
+  const btn = document.getElementById('btn-ifrs');
+  btn.innerHTML = '<span class="spinner"></span> Running...';
+  btn.disabled = true;
+
+  const body = {
+    company_name:   document.getElementById('i-company').value,
+    period:         document.getElementById('i-period').value,
+    reporting_freq: document.getElementById('i-freq').value,
+    in_force_count: parseInt(document.getElementById('i-count').value),
+    entry_age:      parseInt(document.getElementById('i-age').value),
+    tier:           parseInt(document.getElementById('i-tier').value),
+    product_type:   'whole_life',
+  };
+
+  try {
+    const r = await fetch(API + '/ifrs17', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const data = d.data;
+
+    // Top cards
+    document.getElementById('i-totliab').textContent = 'GHS ' + fmt(data.total_liabilities);
+    document.getElementById('i-rev').textContent     = 'GHS ' + fmt(data.pnl.insurance_revenue);
+    document.getElementById('i-car').textContent     = pct(data.solvency.capital_adequacy_ratio);
+
+    // LRC tab
+    document.getElementById('i-pvfcf').textContent  = 'GHS ' + fmt(data.lrc.pvfcf);
+    document.getElementById('i-ra').textContent     = 'GHS ' + fmt(data.lrc.risk_adjustment);
+    document.getElementById('i-csm').textContent    = 'GHS ' + fmt(data.lrc.csm);
+    document.getElementById('i-lrctot').textContent = 'GHS ' + fmt(data.lrc.total);
+    document.getElementById('i-lrcusd').textContent = 'USD ' + fmt(data.total_liabilities_usd);
+
+    // LIC tab
+    document.getElementById('i-licbe').textContent  = 'GHS ' + fmt(data.lic.best_estimate);
+    document.getElementById('i-licra').textContent  = 'GHS ' + fmt(data.lic.risk_adjustment);
+    document.getElementById('i-lictot').textContent = 'GHS ' + fmt(data.lic.total);
+
+    // P&L tab
+    document.getElementById('i-pnlrev').textContent  = 'GHS ' + fmt(data.pnl.insurance_revenue);
+    document.getElementById('i-pnlexp').textContent  = 'GHS ' + fmt(data.pnl.insurance_expenses);
+    document.getElementById('i-pnlcsm').textContent  = 'GHS ' + fmt(data.pnl.csm_amortisation);
+    document.getElementById('i-pnlra').textContent   = 'GHS ' + fmt(data.pnl.ra_release);
+    document.getElementById('i-isr').textContent     = 'GHS ' + fmt(data.pnl.insurance_service_result);
+
+    // CSM tab
+    document.getElementById('i-csmopen').textContent  = 'GHS ' + fmt(data.csm_rollforward.opening);
+    document.getElementById('i-csmint').textContent   = 'GHS ' + fmt(data.csm_rollforward.interest_accretion);
+    document.getElementById('i-csmamort').textContent = 'GHS ' + fmt(data.csm_rollforward.amortisation);
+    document.getElementById('i-csmclose').textContent = 'GHS ' + fmt(data.csm_rollforward.closing);
+
+    // Solvency tab
+    document.getElementById('i-avcap').textContent   = 'GHS ' + fmt(data.solvency.available_capital);
+    document.getElementById('i-reqcap').textContent  = 'GHS ' + fmt(data.solvency.required_capital);
+    document.getElementById('i-surplus').textContent = 'GHS ' + fmt(data.solvency.surplus_deficit);
+    document.getElementById('i-carrow').textContent  = pct(data.solvency.capital_adequacy_ratio);
+    const solEl = document.getElementById('i-solvent');
+    solEl.textContent  = data.solvency.is_solvent ? '✓ Solvent' : '✗ Capital breach!';
+    solEl.className    = 'result-value ' + (data.solvency.is_solvent ? 'good' : 'bad');
+
+  } catch (e) {
+    alert('❌ Error: ' + e.message);
+  }
+
+  btn.innerHTML = '▶ Run valuation';
+  btn.disabled = false;
+}
+
+// ── RATE TABLE ───────────────────────────────────────────────────────────────
+async function runRateTable() {
+  const btn = document.getElementById('btn-rt');
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Generating...';
+  btn.disabled = true;
+  document.getElementById('rt-body').innerHTML =
+    '<tr><td colspan="7" style="text-align:center;color:#aaa;padding:30px">' +
+    '<span class="spinner spinner-dark"></span> Generating rate table — please wait (30–60 seconds for all ages)...</td></tr>';
+
+  const body = {
+    tier:      parseInt(document.getElementById('rt-tier').value),
+    product:   document.getElementById('rt-product').value,
+    age_start: parseInt(document.getElementById('rt-from').value),
+    age_end:   parseInt(document.getElementById('rt-to').value),
+  };
+
+  try {
+    const r = await fetch(API + '/rate-table', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const table = d.data.rate_table;
+    const ages  = Object.keys(table).map(Number).sort((a, b) => a - b);
+
+    document.getElementById('rt-info').textContent =
+      `${d.data.ages_priced} ages priced in ${d.data.elapsed}s`;
+
+    const tbody = document.getElementById('rt-body');
+    tbody.innerHTML = '';
+    ages.forEach(age => {
+      const row = table[age];
+      if (row.error) {
+        tbody.innerHTML += `<tr><td>${age}</td><td colspan="6" style="color:red">Error: ${row.error}</td></tr>`;
+        return;
+      }
+      tbody.innerHTML += `
+        <tr>
+          <td><strong>${age}</strong></td>
+          <td class="td-prem">${fmt(row.monthly_premium)}</td>
+          <td>${fmt(row.annual_premium)}</td>
+          <td>${pct(row.profit_margin)}</td>
+          <td>${fmt(row.csm_at_inception)}</td>
+          <td>${fmt(row.lrc_total)}</td>
+          <td style="color:${row.is_onerous ? 'red' : 'green'}">${row.is_onerous ? 'Yes ⚠️' : 'No ✓'}</td>
+        </tr>`;
+    });
+
+  } catch (e) {
+    document.getElementById('rt-body').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;color:red;padding:20px">Error: ${e.message}</td></tr>`;
+  }
+
+  btn.innerHTML = '▶ Generate rate table';
+  btn.disabled = false;
+}
+
+// ── NON-LIFE RESERVING ──────────────────────────────────────────────────────
+function nicRow(cls, row) {
+  return `
+    <tr>
+      <td><strong>${cls}</strong></td>
+      <td>${fmt(row.ibnr)}</td>
+      <td>${fmt(row.ocr)}</td>
+      <td>${fmt(row.ulae)}</td>
+      <td>${fmt(row.upr)}</td>
+      <td>${fmt(row.dac)}</td>
+    </tr>`;
+}
+
+async function runNicSummary() {
+  const btn = document.getElementById('btn-nic-summary');
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Loading...';
+  btn.disabled = true;
+  ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
+    document.getElementById(id).innerHTML =
+      '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">' +
+      '<span class="spinner spinner-dark"></span> Reading PIC workbooks and running Chain Ladder...</td></tr>';
+  });
+
+  try {
+    const r = await fetch(API + '/reserving/nic-summary');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const data = d.data;
+
+    document.getElementById('nic-summary-info').textContent =
+      `${data.classes.length} classes loaded in ${data.elapsed_seconds}s`;
+
+    ['gross', 'net', 'ri'].forEach(basis => {
+      let html = '';
+      data.classes.forEach(cls => { html += nicRow(cls, data.by_class[cls][basis]); });
+      html += `
+        <tr style="font-weight:bold;background:#f0f7f0">
+          <td><strong>Total</strong></td>
+          <td>${fmt(data.totals[basis].ibnr)}</td>
+          <td>${fmt(data.totals[basis].ocr)}</td>
+          <td>${fmt(data.totals[basis].ulae)}</td>
+          <td>${fmt(data.totals[basis].upr)}</td>
+          <td>${fmt(data.totals[basis].dac)}</td>
+        </tr>`;
+      document.getElementById('nic-' + basis + '-body').innerHTML = html;
+    });
+
+  } catch (e) {
+    ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
+      document.getElementById(id).innerHTML =
+        `<tr><td colspan="6" style="text-align:center;color:red;padding:20px">Error: ${e.message}</td></tr>`;
+    });
+  }
+
+  btn.innerHTML = '▶ Load NIC summary';
+  btn.disabled = false;
+}
+</script>
+</body>
+</html>
