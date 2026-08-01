@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()   # loads .env for local dev — no-op if it doesn't exist (Railway injects env vars directly)
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
@@ -277,71 +278,85 @@ def pricing_endpoint(request: PricingRequest, db: Session = Depends(get_db), cur
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def _build_ifrs17_response_data(report: dict) -> dict:
+    """
+    Flatten a run_ifrs17() report into the JSON-friendly shape both
+    POST /ifrs17 and POST /export/excel return/export — one shared builder
+    so the numbers in the API response and the Excel workbook can never
+    drift apart from each other.
+    """
+    nic = report["nic_report"]
+    isr = report["insurance_service_result"]
+    pv  = report["pv_summary"]
+    csm = report["csm_rollforward"]
+    return {
+        "period":            report["period"],
+        "company":           report["company"],
+        "product":           report["product"],
+        "measurement_model": report["measurement_model"],
+        "in_force_count":    report["in_force_count"],
+        "currency":          report["currency"],
+        "lrc": {
+            "pvfcf":           round(nic.lrc_gmm_pvfcf, 2),
+            "risk_adjustment": round(nic.lrc_gmm_ra, 2),
+            "csm":             round(nic.lrc_gmm_csm, 2),
+            "total":           round(nic.lrc_gmm_pvfcf + nic.lrc_gmm_ra + nic.lrc_gmm_csm, 2),
+        },
+        "lic": {
+            "best_estimate":   round(nic.lic_best_estimate, 2),
+            "risk_adjustment": round(nic.lic_ra, 2),
+            "total":           round(nic.lic_best_estimate + nic.lic_ra, 2),
+        },
+        "total_liabilities":     round(nic.total_liabilities, 2),
+        "total_liabilities_usd": round(nic.total_liabilities_usd, 2),
+        "pnl": {
+            "insurance_revenue":        round(isr.total_insurance_revenue, 2),
+            "insurance_expenses":       round(isr.total_insurance_expenses, 2),
+            "insurance_service_result": round(isr.insurance_service_result, 2),
+            "csm_amortisation":         round(isr.csm_amortisation, 2),
+            "ra_release":               round(isr.ra_release, 2),
+        },
+        "csm_rollforward": {
+            "opening":            round(csm.opening_csm, 2),
+            "interest_accretion": round(csm.interest_accretion, 2),
+            "amortisation":       round(csm.csm_amortisation, 2),
+            "closing":            round(csm.closing_csm, 2),
+        },
+        "solvency": {
+            "capital_adequacy_ratio": round(nic.capital_adequacy_ratio, 4),
+            "is_solvent":             nic.is_solvent,
+            "available_capital":      round(nic.available_capital, 2),
+            "required_capital":       round(nic.solvency_capital_req, 2),
+        },
+        "pricing": {
+            "monthly_premium": round(pv.pv_premiums / report["in_force_count"] / 12, 2),
+            "pv_premiums":     round(pv.pv_premiums, 2),
+            "pv_benefits":     round(pv.pv_benefits, 2),
+            "profit_margin":   round(pv.profit_margin, 4),
+            "is_onerous":      pv.is_onerous,
+        },
+    }
+
+
+def _run_ifrs17_from_request(request: "IFRS17Request") -> dict:
+    report = run_ifrs17(
+        client_id       = DEFAULT_CLIENT,
+        product_name    = _resolve_product_name(request.product_type, request.tier),
+        company_name    = request.company_name,
+        period          = request.period,
+        period_index    = request.period_index,
+        in_force_count  = request.in_force_count,
+        entry_age       = request.entry_age,
+        reporting_freq  = request.reporting_freq,
+        verbose         = False,
+    )
+    return _build_ifrs17_response_data(report)
+
+
 @protected.post("/ifrs17")
 def ifrs17_endpoint(request: IFRS17Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
-        report = run_ifrs17(
-            client_id       = DEFAULT_CLIENT,
-            product_name    = _resolve_product_name(request.product_type, request.tier),
-            company_name    = request.company_name,
-            period          = request.period,
-            period_index    = request.period_index,
-            in_force_count  = request.in_force_count,
-            entry_age       = request.entry_age,
-            reporting_freq  = request.reporting_freq,
-            verbose         = False,
-        )
-        nic = report["nic_report"]
-        isr = report["insurance_service_result"]
-        pv  = report["pv_summary"]
-        csm = report["csm_rollforward"]
-        response_data = {
-                "period":            report["period"],
-                "company":           report["company"],
-                "product":           report["product"],
-                "measurement_model": report["measurement_model"],
-                "in_force_count":    report["in_force_count"],
-                "currency":          report["currency"],
-                "lrc": {
-                    "pvfcf":           round(nic.lrc_gmm_pvfcf, 2),
-                    "risk_adjustment": round(nic.lrc_gmm_ra, 2),
-                    "csm":             round(nic.lrc_gmm_csm, 2),
-                    "total":           round(nic.lrc_gmm_pvfcf + nic.lrc_gmm_ra + nic.lrc_gmm_csm, 2),
-                },
-                "lic": {
-                    "best_estimate":   round(nic.lic_best_estimate, 2),
-                    "risk_adjustment": round(nic.lic_ra, 2),
-                    "total":           round(nic.lic_best_estimate + nic.lic_ra, 2),
-                },
-                "total_liabilities":     round(nic.total_liabilities, 2),
-                "total_liabilities_usd": round(nic.total_liabilities_usd, 2),
-                "pnl": {
-                    "insurance_revenue":        round(isr.total_insurance_revenue, 2),
-                    "insurance_expenses":       round(isr.total_insurance_expenses, 2),
-                    "insurance_service_result": round(isr.insurance_service_result, 2),
-                    "csm_amortisation":         round(isr.csm_amortisation, 2),
-                    "ra_release":               round(isr.ra_release, 2),
-                },
-                "csm_rollforward": {
-                    "opening":            round(csm.opening_csm, 2),
-                    "interest_accretion": round(csm.interest_accretion, 2),
-                    "amortisation":       round(csm.csm_amortisation, 2),
-                    "closing":            round(csm.closing_csm, 2),
-                },
-                "solvency": {
-                    "capital_adequacy_ratio": round(nic.capital_adequacy_ratio, 4),
-                    "is_solvent":             nic.is_solvent,
-                    "available_capital":      round(nic.available_capital, 2),
-                    "required_capital":       round(nic.solvency_capital_req, 2),
-                },
-                "pricing": {
-                    "monthly_premium": round(pv.pv_premiums / report["in_force_count"] / 12, 2),
-                    "pv_premiums":     round(pv.pv_premiums, 2),
-                    "pv_benefits":     round(pv.pv_benefits, 2),
-                    "profit_margin":   round(pv.profit_margin, 4),
-                    "is_onerous":      pv.is_onerous,
-                },
-        }
+        response_data = _run_ifrs17_from_request(request)
         _log_valuation_run(db, current_user, "ifrs17", request.model_dump(), response_data, client_id=DEFAULT_CLIENT)
         return {"success": True, "data": response_data}
     except ValueError as e:
@@ -621,6 +636,51 @@ def download_word_export(filename: str):
     return FileResponse(
         path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=safe_name,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  EXCEL (.xlsx) IFRS 17 (LIFE / GMM) EXPORT
+# ══════════════════════════════════════════════════════════════════════════════
+from outputs.ifrs17_excel_exporter import export_ifrs17_to_excel, GENERATED_DIR as IFRS17_EXCEL_GENERATED_DIR
+
+
+@protected.post("/export/excel")
+def export_excel_endpoint(request: IFRS17Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Life-side (GMM) counterpart to POST /nonlife/statements' Excel export —
+    runs the same IFRS 17 valuation as POST /ifrs17 (same request shape,
+    same shared _build_ifrs17_response_data() builder) and writes it to a
+    formatted workbook instead of returning JSON.
+    """
+    try:
+        response_data = _run_ifrs17_from_request(request)
+        excel_path = export_ifrs17_to_excel(
+            response_data, meta={"generated_at": datetime.now().strftime("%d %B %Y %H:%M")},
+        )
+        filename = os.path.basename(excel_path)
+
+        result = {"excel_download_url": f"/export/excel/download/{filename}"}
+        _log_valuation_run(db, current_user, "ifrs17_excel_export", request.model_dump(), result, client_id=DEFAULT_CLIENT)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/export/excel/download/{filename}")
+def download_excel_export(filename: str):
+    safe_name = os.path.basename(filename)   # reject any path traversal attempt
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(IFRS17_EXCEL_GENERATED_DIR, safe_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename=safe_name,
     )
 

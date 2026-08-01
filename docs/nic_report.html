@@ -24,7 +24,13 @@ body{font-family:Arial,sans-serif;background:#f5f5f5;color:#333;font-size:14px}
 .form-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
 .form-group{display:flex;flex-direction:column;gap:4px}
 .form-group label{font-size:12px;color:#555;font-weight:bold}
-select,input[type="text"],input[type="number"]{width:100%;font-size:13px;border:1px solid #ddd;border-radius:6px;padding:8px 10px;color:#333;background:white}
+select,input[type="text"],input[type="number"],input[type="password"]{width:100%;font-size:13px;border:1px solid #ddd;border-radius:6px;padding:8px 10px;color:#333;background:white}
+#app-shell{display:none}
+#login-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#1F3864}
+.login-card{background:white;border-radius:10px;padding:36px 32px;width:340px;box-shadow:0 10px 40px rgba(0,0,0,0.3)}
+.login-title{font-size:20px;font-weight:bold;color:#1F3864;margin-bottom:4px}
+.login-sub{font-size:12px;color:#888;margin-bottom:24px}
+.login-error{display:none;background:#FFE0E0;border:1px solid #c62828;color:#c62828;padding:10px 14px;border-radius:6px;font-size:12px;margin-bottom:14px}
 .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:6px;font-size:13px;cursor:pointer;font-weight:bold;border:1px solid #ddd;background:white;color:#333;transition:all .15s}
 .btn-primary{background:#1F3864;border-color:#1F3864;color:white}
 .btn-primary:hover{background:#2E5090}
@@ -76,7 +82,25 @@ tr:hover td{background:#fafafa}
 </head>
 <body>
 
-<div class="shell">
+<!-- ══ LOGIN ══ -->
+<div id="login-screen">
+  <form class="login-card" onsubmit="doLogin(event)">
+    <div class="login-title">AMVS</div>
+    <div class="login-sub">Ghana Actuarial Modelling & Valuation System</div>
+    <div class="login-error" id="login-error"></div>
+    <div class="form-group" style="margin-bottom:14px">
+      <label>Email</label>
+      <input type="text" id="login-email" autocomplete="username" placeholder="you@company.com">
+    </div>
+    <div class="form-group" style="margin-bottom:20px">
+      <label>Password</label>
+      <input type="password" id="login-password" autocomplete="current-password">
+    </div>
+    <button type="submit" class="btn btn-primary" id="btn-login" style="width:100%;justify-content:center">▶ Log in</button>
+  </form>
+</div>
+
+<div class="shell" id="app-shell">
   <div class="sidebar">
     <div class="logo">
       <div class="logo-title">AMVS</div>
@@ -157,7 +181,7 @@ tr:hover td{background:#fafafa}
         <div class="btn-row">
           <button class="btn btn-primary" onclick="printReport()">🖨️ Print / Save as PDF</button>
           <button class="btn btn-gold" onclick="showTab('s1',null)">📄 View full report</button>
-          <button class="btn btn-green" onclick="exportWord()">📝 Export to Word</button>
+          <button class="btn btn-green" onclick="exportWord()" id="btn-export-word">📝 Export to Word</button>
         </div>
       </div>
     </div>
@@ -290,6 +314,100 @@ function renderAPITarget() {
 }
 renderAPITarget();
 
+// ── AUTH ─────────────────────────────────────────────────────────────────────
+// The JWT is kept in memory only (a plain JS variable, not localStorage) —
+// it's cleared on refresh, so re-login is required every new page load.
+// Every protected API call must go through apiFetch() so the token is
+// attached and a 401 (expired/invalid token) sends the user back to login.
+let AUTH_TOKEN = null;
+
+async function apiFetch(path, options = {}) {
+  const headers = Object.assign({}, options.headers || {});
+  if (AUTH_TOKEN) headers['Authorization'] = 'Bearer ' + AUTH_TOKEN;
+  const resp = await fetch(API + path, Object.assign({}, options, { headers }));
+  if (resp.status === 401) {
+    AUTH_TOKEN = null;
+    showLogin('Your session has expired — please log in again.');
+    throw new Error('Session expired — please log in again.');
+  }
+  return resp;
+}
+
+// Protected download endpoints need the Authorization header, so a plain
+// <a href> or window.location can't be used (browsers don't attach custom
+// headers to navigation) — fetch the file as a blob and trigger a
+// synthetic download instead.
+async function downloadFile(path, suggestedName) {
+  const resp = await apiFetch(path, {});
+  if (!resp.ok) {
+    let detail = 'Download failed (HTTP ' + resp.status + ')';
+    try { detail = (await resp.json()).detail || detail; } catch (e) {}
+    throw new Error(detail);
+  }
+  const blob = await resp.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = suggestedName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(blobUrl);
+}
+
+function showLogin(message) {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-shell').style.display = 'none';
+  const errEl = document.getElementById('login-error');
+  if (message) {
+    errEl.textContent = message;
+    errEl.style.display = 'block';
+  } else {
+    errEl.style.display = 'none';
+  }
+}
+
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = 'grid';
+}
+
+async function doLogin(event) {
+  if (event) event.preventDefault();
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btn      = document.getElementById('btn-login');
+  const errEl    = document.getElementById('login-error');
+  errEl.style.display = 'none';
+
+  if (!email || !password) {
+    errEl.textContent = 'Enter both email and password.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Logging in...';
+  try {
+    const resp = await fetch(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ username: email, password: password }).toString(),
+    });
+    const d = await resp.json();
+    if (!resp.ok) throw new Error(d.detail || 'Login failed');
+    AUTH_TOKEN = d.access_token;
+    document.getElementById('login-password').value = '';
+    showApp();
+    checkAPI();
+  } catch (e) {
+    errEl.textContent = '❌ ' + e.message;
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '▶ Log in';
+}
+
 let AVR = null;
 
 // API health check
@@ -316,6 +434,8 @@ function fmt(n){ return typeof n==='number'?n.toLocaleString('en-GH',{minimumFra
 function fmtc(n){ return 'GHS '+fmt(n); }
 function pct(n){ return typeof n==='number'?n.toFixed(2)+'%':n; }
 
+let lastAVRRequest = null;   // reused by exportWord() so the Word doc matches what was generated
+
 async function generateReport(){
   const btn = document.getElementById('btn-gen');
   btn.innerHTML='<span class="spinner"></span> Generating...';
@@ -333,10 +453,11 @@ async function generateReport(){
   };
 
   try{
-    const r = await fetch(API+'/nic/avr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r = await apiFetch('/nic/avr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d = await r.json();
     if(!d.success) throw new Error(d.detail);
     AVR = d.data;
+    lastAVRRequest = body;
     populateReport(AVR);
     document.getElementById('quick-summary').style.display='block';
     btn.innerHTML='✓ Report generated';
@@ -619,9 +740,28 @@ function printReport(){
   window.print();
 }
 
-function exportWord(){
-  if(!AVR){alert('Generate the report first.'); return;}
-  alert('Word export: the API can generate a .docx file via POST ' + API + '/export/word, but this button isn\'t wired up to call it yet.');
+async function exportWord(){
+  if(!AVR || !lastAVRRequest){ alert('Generate the report first.'); return; }
+  const btn = document.getElementById('btn-export-word');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> Preparing...';
+  btn.disabled = true;
+  try {
+    const body = Object.assign({}, lastAVRRequest, { client_id: 'pic', include_nonlife: true });
+    const r = await apiFetch('/export/word', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.word_download_url.split('/').pop();
+    await downloadFile(d.data.word_download_url, filename);
+  } catch (e) {
+    alert('❌ Word export failed: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
 }
 </script>
 </body>
