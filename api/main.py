@@ -6,12 +6,14 @@ from dotenv import load_dotenv
 load_dotenv()   # loads .env for local dev — no-op if it doesn't exist (Railway injects env vars directly)
 
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from engine.runner import run_pricing, run_ifrs17, run_rate_table, run_reserving, run_nic_summary
@@ -21,7 +23,7 @@ from engine.journals import generate_nonlife_journal
 from engine.clients import list_clients, load_client
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
-from db.database import get_db, init_db
+from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
 from db.models import User, ValuationRun
 from auth.dependencies import get_current_user
 from auth.router import router as auth_router
@@ -174,6 +176,63 @@ def welcome(request: Request):
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "engine": "operational"}
+
+def _mask_database_url(url: str) -> str:
+    """postgresql://user:secret@host:5432/dbname -> postgresql://user:****@host:5432/dbname"""
+    try:
+        parts = urlsplit(url)
+        netloc = parts.netloc
+        if parts.password:
+            netloc = netloc.replace(f":{parts.password}@", ":****@")
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    except Exception:
+        return "(could not parse DATABASE_URL)"
+
+
+@app.get("/db/status")
+def db_status():
+    """
+    Unauthenticated diagnostic — deliberately not behind auth, since its
+    whole purpose is diagnosing why auth itself might be broken (e.g.
+    POST /auth/login 500ing because the users table doesn't exist or the
+    database is unreachable). The connection string is shown with its
+    password masked — safe to leave public, and far more useful for
+    catching a typo'd host/port/dbname than a bare scheme would be.
+
+    This answers the same question db/database.py's init_db() startup log
+    line does, but on demand — useful when Railway's deployment logs
+    aren't quick to reach, or when the failure happens well after startup
+    (e.g. a database that was reachable at boot but isn't anymore).
+    """
+    result = {
+        "database_url_configured": bool(os.environ.get("DATABASE_URL")),
+        "database_url_masked":     _mask_database_url(DATABASE_URL),
+        "secret_key_configured":   bool(os.environ.get("SECRET_KEY")),
+        "database_reachable":      False,
+        "users_table_exists":      False,
+        "user_count":              None,
+        "error":                   None,
+    }
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            result["database_reachable"] = True
+
+            table_names = inspect(db_engine).get_table_names()
+            result["users_table_exists"] = "users" in table_names
+            if result["users_table_exists"]:
+                result["user_count"] = db.query(User).count()
+            else:
+                result["error"] = (
+                    "users table does not exist — init_db() likely failed at startup; "
+                    "check the deployment logs for a line starting 'STARTUP WARNING: init_db() failed'"
+                )
+        finally:
+            db.close()
+    except Exception as e:
+        result["error"] = f"{type(e).__name__}: {e}"
+    return result
 
 @protected.get("/clients")
 def list_clients_endpoint():
