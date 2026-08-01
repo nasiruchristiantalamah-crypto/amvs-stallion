@@ -57,9 +57,24 @@ app = FastAPI(
     lifespan=_lifespan,
 )
 
-# Comma-separated list of allowed origins in production (see .env.example);
-# defaults to "*" only so local development works without a .env file.
-_allowed_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "*").split(",") if o.strip()]
+# Comma-separated list of allowed origins in production (see .env.example).
+# https://nasiruchristiantalamah-crypto.github.io — the GitHub Pages-hosted
+# dashboard/nic_report (see docs/) — is always allowed regardless of what
+# ALLOWED_ORIGINS is set to on Railway. It's this project's own known
+# frontend; forgetting to include it in that env var would silently break
+# it with a CORS error that's easy to misdiagnose as "the API is down"
+# (the dashboard's health check just shows offline, no CORS-specific
+# message — browsers don't surface CORS failures as a distinguishable
+# fetch() error).
+GITHUB_PAGES_ORIGIN = "https://nasiruchristiantalamah-crypto.github.io"
+
+_env_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if _env_origins:
+    _allowed_origins = sorted(set(_env_origins) | {GITHUB_PAGES_ORIGIN})
+else:
+    # No ALLOWED_ORIGINS set at all (e.g. local dev without a .env) — allow
+    # everything, same permissive default as before.
+    _allowed_origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
