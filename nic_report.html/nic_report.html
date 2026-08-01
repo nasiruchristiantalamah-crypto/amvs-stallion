@@ -263,7 +263,7 @@ tr:hover td{background:#fafafa}
 <div class="watermark">AMVS — Stallion Consultants Ltd</div>
 
 <script>
-const API = 'http://localhost:8000';
+const API = 'https://web-production-efcac.up.railway.app';
 let AVR = null;
 
 // API health check
@@ -595,7 +595,7 @@ function printReport(){
 
 function exportWord(){
   if(!AVR){alert('Generate the report first.'); return;}
-  alert('Word export: The API generates a .docx file.\n\nTo enable this feature, add python-docx to requirements.txt and call:\nGET http://localhost:8000/nic/avr/export-word\n\nThis is the next module to build.');
+  alert('Word export: the API can generate a .docx file via POST ' + API + '/export/word, but this button isn\'t wired up to call it yet.');
 }
 </script>
 </body>

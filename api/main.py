@@ -7,7 +7,7 @@ load_dotenv()   # loads .env for local dev — no-op if it doesn't exist (Railwa
 
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -148,13 +148,13 @@ class ReservingRequest(BaseModel):
     expected_loss_ratio_net:         Optional[float]      = Field(None, ge=0, le=5)
 
 @app.get("/")
-def welcome():
+def welcome(request: Request):
     return {
         "system":  "AMVS — Ghana Actuarial Modelling & Valuation System",
         "version": "1.0.0",
         "status":  "running",
         "company": "Stallion Consultants Ltd",
-        "docs":    "http://localhost:8000/docs",
+        "docs":    str(request.url_for("swagger_ui_html")),
     }
 
 @app.get("/health")
