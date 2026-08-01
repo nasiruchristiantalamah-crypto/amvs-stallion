@@ -21,17 +21,31 @@ from engine.journals import generate_nonlife_journal
 from engine.clients import list_clients, load_client
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
-from db.database import Base, engine as db_engine, get_db
+from db.database import get_db, init_db
 from db.models import User, ValuationRun
 from auth.dependencies import get_current_user
 from auth.router import router as auth_router
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    # Stand up users/clients/valuation_runs on first boot — see db/database.py
-    # for why this is create_all() rather than an Alembic migration.
-    Base.metadata.create_all(bind=db_engine)
+    # init_db() (db/database.py) already catches and logs its own errors —
+    # it never raises. This try/except is a deliberate second layer: NOTHING
+    # in startup should ever be allowed to stop uvicorn from binding and
+    # serving /health. Before this existed, an unreachable database made
+    # create_all() raise here, uvicorn logged "Application startup failed.
+    # Exiting.", and the process exited without binding to a port at all —
+    # every route 502'd, not just the ones that touch the database.
+    print("STARTUP: lifespan begin")
+    try:
+        print("STARTUP: step 1/1 — database init starting...")
+        init_db()
+        print("STARTUP: step 1/1 — database init finished.")
+    except Exception as e:
+        print(f"STARTUP WARNING: unexpected error escaped init_db() — {type(e).__name__}: {e}")
+        print("STARTUP WARNING: continuing to start the app anyway.")
+    print("STARTUP: lifespan complete — uvicorn will now accept requests")
     yield
+    print("SHUTDOWN: lifespan ending")
 
 
 app = FastAPI(
