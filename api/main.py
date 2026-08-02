@@ -685,6 +685,67 @@ def download_excel_export(filename: str):
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  WORD (.docx) NON-LIFE AVR EXPORT
+# ══════════════════════════════════════════════════════════════════════════════
+from outputs.nonlife_word_exporter import generate_nonlife_avr_word_document, GENERATED_DIR as NONLIFE_WORD_GENERATED_DIR
+
+
+class NonLifeWordExportRequest(BaseModel):
+    client_id:          str = Field("pic", description="Which insurer — see GET /clients")
+    period:             str = Field("FY2025")
+    appointed_actuary:  str = Field("Charles Osei-Akoto")
+    consulting_firm:    str = Field("Stallion Consultants Ltd")
+
+
+@protected.post("/export/nonlife-word")
+def export_nonlife_word_endpoint(request: NonLifeWordExportRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Full non-life NIC Actuarial Valuation Report (.docx), matching PIC's
+    real published AVR structure exactly — see outputs/nonlife_word_exporter.py.
+    """
+    if request.client_id not in list_clients():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown client_id '{request.client_id}' — available clients: {list_clients()}",
+        )
+    _require_data_access(request.client_id)
+    try:
+        docx_path = generate_nonlife_avr_word_document(
+            client_id          = request.client_id,
+            period              = request.period,
+            appointed_actuary   = request.appointed_actuary,
+            consulting_firm     = request.consulting_firm,
+        )
+        filename = os.path.basename(docx_path)
+
+        result = {"word_download_url": f"/export/nonlife-word/download/{filename}"}
+        _log_valuation_run(
+            db, current_user, "nonlife_word_export", request.model_dump(), result,
+            client_id=request.client_id,
+        )
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/export/nonlife-word/download/{filename}")
+def download_nonlife_word_export(filename: str):
+    safe_name = os.path.basename(filename)   # reject any path traversal attempt
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(NONLIFE_WORD_GENERATED_DIR, safe_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=safe_name,
+    )
+
+
 @protected.get("/nic/quarters")
 def get_quarters():
     return {

@@ -527,6 +527,7 @@
         </p>
         <button class="btn btn-gold" onclick="runNicSummary()" id="btn-nic-summary">▶ Load NIC summary</button>
         <button class="btn btn-primary" onclick="downloadReservingExcel()" id="btn-reserving-download" style="display:none;margin-left:8px">⬇ Download Excel</button>
+        <button class="btn btn-primary" onclick="downloadNonlifeAvrWord()" id="btn-reserving-avr-word" style="display:none;margin-left:8px">⬇ Download AVR Report</button>
         <span id="nic-summary-info" style="font-size:12px;color:#888;margin-left:12px"></span>
       </div>
 
@@ -1038,6 +1039,7 @@ async function runNicSummary() {
   btn.innerHTML = '<span class="spinner spinner-dark"></span> Loading...';
   btn.disabled = true;
   document.getElementById('btn-reserving-download').style.display = 'none';
+  document.getElementById('btn-reserving-avr-word').style.display = 'none';
   ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
     document.getElementById(id).innerHTML =
       '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">' +
@@ -1069,6 +1071,7 @@ async function runNicSummary() {
     });
 
     document.getElementById('btn-reserving-download').style.display = 'inline-flex';
+    document.getElementById('btn-reserving-avr-word').style.display = 'inline-flex';
 
   } catch (e) {
     ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
@@ -1096,6 +1099,28 @@ async function downloadReservingExcel() {
     if (!d.success) throw new Error(d.detail);
     const filename = d.data.excel_download_url.split('/').pop();
     await downloadFile(d.data.excel_download_url, filename);
+  } catch (e) {
+    alert('❌ Download failed: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+async function downloadNonlifeAvrWord() {
+  const btn = document.getElementById('btn-reserving-avr-word');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Preparing...';
+  btn.disabled = true;
+  try {
+    const r = await apiFetch('/export/nonlife-word', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client_id: 'pic', period: 'FY2025' })
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.word_download_url.split('/').pop();
+    await downloadFile(d.data.word_download_url, filename);
   } catch (e) {
     alert('❌ Download failed: ' + e.message);
   }
