@@ -201,36 +201,70 @@ def _build_paa_liabilities_sheet(wb, statements: dict):
                             total_row_indices={len(rows) - 1}, onerous_row_indices=onerous_idx)
 
 
+# PIC's real published Balance Sheet/Income Statement column order (roughly
+# alphabetical) and display names — differ from this engine's internal
+# class keys (GRANULAR_CLASSES) only cosmetically; dict lookups everywhere
+# else still use the short internal keys ("Fire", "Marine").
+REPORT_COLUMN_ORDER = ["Accident", "Bonds", "Engineering", "Fire", "Marine", "Motor"]
+REPORT_COLUMN_DISPLAY_NAME = {
+    "Fire":   "Fire, Theft and Property",
+    "Marine": "Marine and Aviation",
+}
+
+
+def _report_column_order(classes: List[str]) -> List[str]:
+    """PIC's real display order when all 6 granular classes are present; the
+    engine's own class list order otherwise (e.g. the 4-class Motor/Fire/
+    Accident/Others grouping, which has no real-report ordering to match)."""
+    if set(classes) == set(REPORT_COLUMN_ORDER):
+        return REPORT_COLUMN_ORDER
+    return classes
+
+
+def _display_name(cls: str) -> str:
+    return REPORT_COLUMN_DISPLAY_NAME.get(cls, cls)
+
+
 def _build_balance_sheet_sheet(wb, statements: dict):
-    """PIC-style layout: line items as rows, classes as columns (matches
-    PIC's own "Balance Sheet 2025" sheet orientation)."""
+    """
+    PIC-style layout: line items as rows, classes as columns (matches PIC's
+    own "Balance Sheet 2025" / "RI Balancesheet 2025" sheet orientation
+    exactly — row labels, column order, and column display names).
+
+    NOTE on the "IBNR + OCR" row label: PIC's own real Balance Sheet uses
+    that label for a figure that's actually IBNR + OCR + ULAE combined
+    (confirmed by reconciling their published figures) — not a mistake in
+    this exporter, PIC's own convention is carried through as-is so the
+    row genuinely matches theirs.
+    """
     ws = wb.create_sheet("Balance sheet")
     row = _write_title(ws, "Non-Life Balance Sheet — by Class of Business", statements["period"])
 
     line_items = [
-        ("IBNR + OCR",             lambda c: c.ibnr + c.ocr),
+        ("IBNR + OCR",             lambda c: c.ibnr + c.ocr + c.ulae),
         ("Effect of Discounting",  lambda c: c.effect_of_discounting),
         ("Risk Adjustment",         lambda c: c.risk_adjustment),
-        ("ULAE",                     lambda c: c.ulae),
-        ("Liability for Incurred Claims (LIC)", lambda c: c.lic),
+        ("Liability for Incurred Claims", lambda c: c.lic),
         ("",                            lambda c: None),
         ("Unearned Premium Reserve",       lambda c: c.upr),
         ("Deferred Acquisition Cost",         lambda c: -c.dac),
-        ("Liability for Remaining Coverage (LRC)", lambda c: c.lrc),
+        ("Loss Component",                       lambda c: c.loss_component),
+        ("Liability for Remaining Coverage", lambda c: c.lrc),
         ("",                                         lambda c: None),
         ("Total Reserve",                               lambda c: c.total_liability),
     ]
-    subtotal_labels = {"Liability for Incurred Claims (LIC)", "Liability for Remaining Coverage (LRC)", "Total Reserve"}
+    subtotal_labels = {"Liability for Incurred Claims", "Liability for Remaining Coverage", "Total Reserve"}
 
+    classes = _report_column_order(statements["classes"])
     for basis in ("gross", "net", "ri"):
         row = _write_section(ws, basis.upper(), row)
-        headers = ["Line item"] + statements["classes"] + ["Total"]
+        headers = ["Line item"] + [_display_name(c) for c in classes] + ["Total"]
         rows, total_idx = [], set()
         for i, (label, getter) in enumerate(line_items):
             if label == "":
                 rows.append([""] * len(headers))
                 continue
-            values = [getter(statements["by_class"][cls][basis]) for cls in statements["classes"]]
+            values = [getter(statements["by_class"][cls][basis]) for cls in classes]
             total_val = getter(statements["totals"][basis])
             rows.append([label] + values + [total_val])
             if label in subtotal_labels:
@@ -239,52 +273,105 @@ def _build_balance_sheet_sheet(wb, statements: dict):
         row = _write_table(ws, row, headers, rows, currency_cols=currency_cols, total_row_indices=total_idx)
 
 
-def _pnl_net(journal_entries: List[JournalEntry], class_of_business: str, account_code: str) -> float:
-    """Net P&L effect of one account for one class: credits increase profit, debits reduce it."""
+def _pnl_net(journal_entries: List[JournalEntry], class_of_business: str, account_code: str,
+             narrative_contains: Optional[str] = None) -> float:
+    """
+    Net P&L effect of one account for one class: credits increase profit,
+    debits reduce it. `narrative_contains` optionally isolates one specific
+    movement type where several share the same account code (e.g. account
+    "302" carries IBNR movement, OCR movement, and risk adjustment movement
+    as three separate postings — see engine/journals.py's post_journal_entries()).
+    """
     return round(sum(
         (e.credit - e.debit) for e in journal_entries
         if e.class_of_business == class_of_business and e.account_code == account_code
+        and (narrative_contains is None or narrative_contains in e.narrative)
     ), 2)
 
 
 def _build_income_statement_sheet(wb, journal_entries: List[JournalEntry], statements: dict):
-    """Derived from the journal's P&L accounts (301-307) — matches PIC's own
-    Income Statement 2025 structure (Insurance Revenue -> Service Expense ->
-    Service Result -> Finance Income -> Reinsurance Expense/Recoveries -> Profit)."""
+    """
+    Matches PIC's own real published Income Statement row structure exactly
+    (PAA premium reserve release -> claims analysis -> DAC release ->
+    onerous loss -> Insurance service result -> Finance effect -> Investment
+    Result -> IFRS 17 Profit).
+
+    HONEST LIMITATION: PIC's real income statement decomposes claims
+    movements into "Expected release of incurred claims" / "Expected
+    release of risk adjustment" (development of PRIOR periods' estimates)
+    separately from "New Incurred Claims" / "Increase in PV and RA"
+    (genuinely new this period) — a true period-over-period comparison.
+    This engine's non-life side computes a POINT-IN-TIME snapshot, not a
+    roll-forward against a persisted prior period (see engine/journals.py's
+    module docstring) — every movement is "day 1" first-time recognition,
+    so there's no prior estimate to have "expected released" FROM. Those
+    two rows are therefore always zero here; the full amount shows under
+    "New Incurred Claims" / "Increase in PV and RA" instead. This is
+    disclosed, not fabricated — a genuine roll-forward would need a
+    persisted prior-period snapshot for non-life, which doesn't exist yet
+    (the life side has one — see engine/rollforward_store.py).
+    """
     ws = wb.create_sheet("Income statement")
     row = _write_title(ws, "Non-Life Income Statement — by Class of Business", statements["period"])
+    ws.cell(row=row, column=1, value=(
+        "Note: 'Expected release of...' rows are always 0 — this engine computes a point-in-time "
+        "snapshot, not a period-over-period roll-forward, for the non-life side (see module docs)."
+    )).font = SUBTITLE_FONT
+    row += 2
 
-    headers = ["Line item"] + statements["classes"] + ["Total"]
-    lines = [
-        ("Insurance Revenue (premium earned)",   "301"),
-        ("Claims Incurred",                        "302"),
-        ("ULAE",                                      "303"),
-        ("Acquisition Costs (DAC deferral)",             "304"),
-    ]
+    classes = _report_column_order(statements["classes"])
+    headers = ["Line item"] + [_display_name(c) for c in classes] + ["Total"]
+
+    def line(label: str, values: List[float]) -> list:
+        return [label] + [round(v, 2) for v in values] + [round(sum(values), 2)]
+
     rows, total_idx = [], set()
-    service_result_row = {}
-    for label, code in lines:
-        vals = [_pnl_net(journal_entries, cls, code) for cls in statements["classes"]]
-        rows.append([label] + vals + [round(sum(vals), 2)])
-        service_result_row[code] = vals
 
-    isr_vals = [sum(service_result_row[c][i] for c in ("301", "302", "303", "304")) for i in range(len(statements["classes"]))]
-    rows.append(["Insurance Service Result"] + [round(v, 2) for v in isr_vals] + [round(sum(isr_vals), 2)])
+    premium_release = [_pnl_net(journal_entries, cls, "301") for cls in classes]
+    rows.append(line("PAA premium reserve release excl inv component", premium_release))
+
+    claims_paid = [-_pnl_net(journal_entries, cls, "201", "claims paid") for cls in classes]
+    rows.append(line("Actual claims and expenses excl inv comp over the period", claims_paid))
+
+    zeros = [0.0] * len(classes)
+    rows.append(line("Expected release of incurred claims over the period", zeros))
+    rows.append(line("Expected release of risk adjustment for incurred claims", zeros))
+
+    new_incurred = [
+        -(_pnl_net(journal_entries, cls, "302", "IBNR movement") + _pnl_net(journal_entries, cls, "302", "OCR movement"))
+        for cls in classes
+    ]
+    rows.append(line("New Incurred Claims over the period", new_incurred))
+
+    pv_ra_increase = [-_pnl_net(journal_entries, cls, "302", "risk adjustment movement") for cls in classes]
+    rows.append(line("Increase in PV and RA of incurred claims liability", pv_ra_increase))
+
+    dac_release = [_pnl_net(journal_entries, cls, "304") for cls in classes]
+    rows.append(line("Release of deferred acquisition cost", dac_release))
+
+    onerous_loss = [
+        -statements["by_class"][cls]["gross"].loss_component if statements["by_class"][cls]["gross"].is_onerous else 0.0
+        for cls in classes
+    ]
+    rows.append(line("Increase in losses on onerous contracts", onerous_loss))
+
+    expense_total = [
+        claims_paid[i] + new_incurred[i] + pv_ra_increase[i] + dac_release[i] + onerous_loss[i]
+        for i in range(len(classes))
+    ]
+    rows.append(line("Total", expense_total))
     total_idx.add(len(rows) - 1)
 
-    for label, code in (("Finance Income (Effect of Discounting)", "305"),
-                        ("Reinsurance Expense (Premium Ceded)",      "306"),
-                        ("Reinsurance Recoveries",                      "307")):
-        vals = [_pnl_net(journal_entries, cls, code) for cls in statements["classes"]]
-        rows.append([label] + vals + [round(sum(vals), 2)])
+    isr_vals = [premium_release[i] + expense_total[i] for i in range(len(classes))]
+    rows.append(line("Insurance service result", isr_vals))
+    total_idx.add(len(rows) - 1)
 
-    profit_vals = []
-    for i, cls in enumerate(statements["classes"]):
-        total = isr_vals[i]
-        for code in ("305", "306", "307"):
-            total += _pnl_net(journal_entries, cls, code)
-        profit_vals.append(round(total, 2))
-    rows.append(["IFRS 17 Profit"] + profit_vals + [round(sum(profit_vals), 2)])
+    finance_effect = [_pnl_net(journal_entries, cls, "305") for cls in classes]
+    rows.append(line("Finance effect for incurred claims in P&L", finance_effect))
+    rows.append(line("Investment Result", finance_effect))   # PIC's own report shows the same figure under both labels
+
+    profit_vals = [isr_vals[i] + finance_effect[i] for i in range(len(classes))]
+    rows.append(line("IFRS 17 Profit", profit_vals))
     total_idx.add(len(rows) - 1)
 
     currency_cols = set(range(2, len(headers) + 2))

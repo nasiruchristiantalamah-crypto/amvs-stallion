@@ -83,6 +83,12 @@ class ClientConfig:
     data_files:           Dict[str, str] = field(default_factory=lambda: dict(DEFAULT_DATA_FILES))
     assumption_overrides:   Dict[str, Any] = field(default_factory=dict)
     reinsurance:              Dict[str, Any] = field(default_factory=dict)
+    # Maps this client's own Outstanding Claims product-level labels (e.g.
+    # "PLANT AND MACHINERY") to one of engine.data_loader.GRANULAR_CLASSES
+    # (e.g. "Engineering") — genuinely insurer-specific, not guessable by
+    # keyword. Keys are matched case-insensitively. See
+    # engine/data_loader.py's _bucket_granular().
+    ocr_class_mapping:         Dict[str, str] = field(default_factory=dict)
 
     @property
     def root(self) -> str:
@@ -162,16 +168,23 @@ def load_client(client_id: str) -> ClientConfig:
     env_data_dir = os.environ.get(f"{client_id.upper()}_DATA_DIR")
     data_folder = env_data_dir or client_raw.get("data_folder")
 
+    # Normalise to lowercase keys so _bucket_granular()'s case-insensitive
+    # lookup doesn't depend on how the label happened to be cased in YAML.
+    ocr_class_mapping = {
+        str(k).strip().lower(): v for k, v in (raw.get("ocr_class_mapping") or {}).items()
+    }
+
     return ClientConfig(
         client_id             = client_id,
         name                  = raw.get("name", client_id),
-        data_folder           = data_folder,
-        results_folder        = client_raw.get("results_folder"),
-        currency               = raw.get("currency", "GHS"),
-        fx_rate_ghs_usd         = raw.get("fx_rate_ghs_usd", 15.50),
-        data_files                = data_files,
-        assumption_overrides       = raw.get("assumption_overrides") or {},
-        reinsurance                  = raw.get("reinsurance") or {},
+        data_folder            = data_folder,
+        results_folder         = client_raw.get("results_folder"),
+        currency                = raw.get("currency", "GHS"),
+        fx_rate_ghs_usd          = raw.get("fx_rate_ghs_usd", 15.50),
+        data_files                 = data_files,
+        assumption_overrides        = raw.get("assumption_overrides") or {},
+        reinsurance                   = raw.get("reinsurance") or {},
+        ocr_class_mapping                = ocr_class_mapping,
     )
 
 

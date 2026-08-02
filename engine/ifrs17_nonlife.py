@@ -189,6 +189,39 @@ def generate_nonlife_paa_statements(
         print(f"{'='*60}")
 
     summary = run_nic_summary(client_id=client_id, verbose=False)
+    return _build_statements_from_summary(summary, period, ra_loading, discount_duration_years, use_discounting, verbose)
+
+
+def generate_nonlife_paa_statements_granular(
+    client_id:                 str             = "pic",
+    period:                    str             = "FY2025",
+    ra_loading:                float           = DEFAULT_RA_LOADING,
+    discount_duration_years:  float           = DEFAULT_DISCOUNT_DURATION_YEARS,
+    use_discounting:            bool            = True,
+    verbose:                      bool            = True,
+) -> dict:
+    """
+    Same as generate_nonlife_paa_statements(), but broken out into PIC's
+    real 6-class breakdown (Motor/Fire/Accident/Bonds/Engineering/Marine)
+    via engine.runner.run_nic_summary_granular() instead of the 4-class
+    Motor/Fire/Accident/Others grouping — see that function's docstring
+    for exactly how each class's figures are sourced (direct vs allocated).
+    """
+    from engine.runner import run_nic_summary_granular
+
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"  AMVS NON-LIFE PAA STATEMENTS (6-class) — {period} — client: {client_id}")
+        print(f"{'='*60}")
+
+    summary = run_nic_summary_granular(client_id=client_id, verbose=False)
+    return _build_statements_from_summary(summary, period, ra_loading, discount_duration_years, use_discounting, verbose)
+
+
+def _build_statements_from_summary(
+    summary: dict, period: str, ra_loading: float, discount_duration_years: float,
+    use_discounting: bool, verbose: bool,
+) -> dict:
     classes = summary["classes"]
 
     discount_curve = load_yield_curve() if use_discounting else None

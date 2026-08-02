@@ -468,6 +468,18 @@ def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
 
     Combines:
         - IBNR: run_reserving() (Chain Ladder) fed by data_loader.load_triangle()
+                — this raw chain-ladder gap is actually "IBNR + URR"
+                combined (URR = Unexpired Risk Reserve, the portion
+                attributable to risk that hasn't occurred yet on the most
+                recent underwriting year — already provided for via UPR/
+                DAC on the LRC side). If the client has configured a
+                bel_workbook (data_loader.load_ibnr_urr_split()), that
+                split is used instead — pure IBNR only, URR excluded, to
+                avoid double-counting the same risk on both sides of the
+                balance sheet — with the discarded URR amount reported in
+                "urr" for transparency. Clients without that workbook
+                configured fall back to the combined chain-ladder figure,
+                clearly flagged via "urr": None.
         - OCR (case reserves): data_loader.load_ocr()
         - ULAE: data_loader.load_ulae() — not reinsured, so Net = Gross, RI = 0
                 (PIC's own reporting convention — claims handling expense
@@ -478,12 +490,12 @@ def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
 
     Returns:
         {
-            "by_class": {"Motor": {"gross": {...}, "net": {...}, "ri": {...}}, ...},
+            "by_class": {"Motor": {"gross": {..., "urr": float|None}, "net": {...}, "ri": {...}}, ...},
             "totals":   {"gross": {...}, "net": {...}, "ri": {...}},
             "elapsed_seconds": float,
         }
     """
-    from engine.data_loader import RESERVING_CLASSES, load_triangle, load_ocr, load_upr_dac, load_ulae
+    from engine.data_loader import RESERVING_CLASSES, load_triangle, load_ocr, load_upr_dac, load_ulae, load_ibnr_urr_split
 
     start = time.time()
     if verbose:
@@ -495,6 +507,16 @@ def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
     upr_dac_data = load_upr_dac(client_id=client_id)
     ulae_data    = load_ulae(client_id=client_id)
 
+    try:
+        ibnr_urr_gross = load_ibnr_urr_split(client_id=client_id, basis="gross")
+        ibnr_urr_net   = load_ibnr_urr_split(client_id=client_id, basis="net")
+        if verbose:
+            print("  Using client's own pure-IBNR/URR split (URR excluded from LIC).")
+    except ValueError:
+        ibnr_urr_gross = ibnr_urr_net = None
+        if verbose:
+            print("  No IBNR/URR split configured for this client — using combined chain-ladder IBNR+URR.")
+
     by_class: dict = {}
     for cls in RESERVING_CLASSES:
         tri = load_triangle(cls, client_id=client_id)
@@ -505,8 +527,13 @@ def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
             verbose           = False,
         )
 
-        gross_ibnr = reserving["gross_ibnr"]
-        net_ibnr   = reserving["net_ibnr"]
+        if ibnr_urr_gross is not None:
+            gross_ibnr, gross_urr = ibnr_urr_gross[cls]["ibnr"], ibnr_urr_gross[cls]["urr"]
+            net_ibnr, net_urr     = ibnr_urr_net[cls]["ibnr"], ibnr_urr_net[cls]["urr"]
+        else:
+            gross_ibnr, gross_urr = reserving["gross_ibnr"], None
+            net_ibnr, net_urr     = reserving["net_ibnr"], None
+
         gross_ocr  = ocr_data[cls]["gross"]
         net_ocr    = ocr_data[cls]["net"]
         gross_ulae = ulae_data[cls]
@@ -520,17 +547,18 @@ def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
             "gross": {
                 "ibnr": round(gross_ibnr, 2), "ocr": round(gross_ocr, 2),
                 "ulae": round(gross_ulae, 2), "upr":  round(gross_upr, 2),
-                "dac":  round(gross_dac, 2),
+                "dac":  round(gross_dac, 2),  "urr":  round(gross_urr, 2) if gross_urr is not None else None,
             },
             "net": {
                 "ibnr": round(net_ibnr, 2), "ocr": round(net_ocr, 2),
                 "ulae": round(net_ulae, 2), "upr":  round(net_upr, 2),
-                "dac":  round(net_dac, 2),
+                "dac":  round(net_dac, 2),  "urr":  round(net_urr, 2) if net_urr is not None else None,
             },
             "ri": {
                 "ibnr": round(gross_ibnr - net_ibnr, 2), "ocr": round(gross_ocr - net_ocr, 2),
                 "ulae": 0.0,                             "upr": round(gross_upr - net_upr, 2),
                 "dac":  round(gross_dac - net_dac, 2),
+                "urr":  round(gross_urr - net_urr, 2) if (gross_urr is not None and net_urr is not None) else None,
             },
         }
 
@@ -556,6 +584,178 @@ def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
         "totals":          totals,
         "elapsed_seconds": round(elapsed, 2),
     }
+
+
+def _allocate_others(others_total: float, weights: Dict[str, float]) -> Dict[str, float]:
+    """
+    Split a combined 'Others' figure across Bonds/Engineering/Marine in
+    proportion to `weights` (each class's OCR+UPR — see
+    run_nic_summary_granular()'s docstring for why this is a disclosed
+    proxy, not a reproduction of the insurer's real per-class split).
+    Falls back to an even 3-way split if all weights are zero/negative.
+    """
+    total_weight = sum(max(0.0, w) for w in weights.values())
+    if total_weight <= 0:
+        return {cls: others_total / len(weights) for cls in weights}
+    return {cls: others_total * (max(0.0, w) / total_weight) for cls, w in weights.items()}
+
+
+def run_nic_summary_granular(client_id: str = "pic", verbose: bool = True) -> dict:
+    """
+    Like run_nic_summary(), but broken out into the 6-class breakdown
+    (Motor, Fire, Accident, Bonds, Engineering, Marine) PIC's own published
+    reports actually use, instead of the reserving engine's internal
+    Motor/Fire/Accident/Others grouping (Others exists only because the
+    IBNR triangle workbook has just 4 sheets — see
+    engine/data_loader.py's GRANULAR_CLASSES docstring).
+
+    How each class's figures are sourced:
+        - IBNR (all 6 classes): Motor/Fire/Accident come straight from
+          run_nic_summary()'s chain-ladder result, unaffected — these
+          already match PIC's real published figures to the dollar (see
+          tests/test_ifrs17_nonlife.py). Bonds/Engineering/Marine are
+          allocated — see below.
+        - OCR/UPR/DAC (all 6 classes, always): read directly from the
+          source data at native 6-class resolution
+          (data_loader.py's *_granular() loaders), confirmed against PIC's
+          real published Appendix III to the dollar for every class —
+          INCLUDING Motor/Fire/Accident. This deliberately does NOT reuse
+          run_nic_summary()'s 4-bucket OCR for Fire/Accident: that 4-bucket
+          load_ocr() buckets by keyword ("fire" in label, "accident" in
+          label), which is correct for UPR/DAC/ULAE (clean native labels)
+          but WRONG for OCR specifically — PIC's raw claims register uses
+          opaque product labels ("ASSETS ALL RISK", "GOODS IN TRANSIT")
+          that don't contain those words at all, so under the 4-bucket
+          scheme they silently fall into "Others" instead of Fire/Accident.
+          The class-level total is still right there (nothing is lost,
+          just misallocated), which is why this went unnoticed — no
+          existing test checks OCR by class, only LRC (UPR-DAC). Verified:
+          old 4-bucket load_ocr('pic')['Fire']['gross'] == 0.0, when PIC's
+          real Fire OCR is GHS 2,158,994.89.
+        - ULAE (all 6 classes): Motor/Fire/Accident from
+          run_nic_summary() (its clean native labels don't have the OCR
+          issue above); Bonds/Engineering/Marine are allocated — see below.
+        - Bonds, Engineering, Marine — IBNR, ULAE, paid claims: PIC's own
+          source data only carries these as a SINGLE combined "Others"
+          figure (the IBNR triangle workbook has no per-class breakdown
+          for these three, and neither does the ULAE workbook). This
+          function ALLOCATES run_nic_summary()'s "Others" total across the
+          three in proportion to each class's (OCR + UPR) — a disclosed,
+          defensible proxy, but NOT a reproduction of PIC's real split
+          (PIC's real Bonds/Engineering/Marine IBNR reflects large-claims
+          treatment and/or actuarial judgement applied outside the source
+          files this engine reads — see engine/data_loader.py's
+          load_ulae_granular() docstring). Expect the INDIVIDUAL
+          Bonds/Engineering/Marine IBNR (and anything derived from it —
+          LIC, Total Reserve) to diverge from PIC's real published figures
+          for these three classes specifically; the AGGREGATE total across
+          all 6 classes is unaffected (allocation redistributes the same
+          "Others" total, it doesn't change it).
+
+    Returns: same shape as run_nic_summary(), but "classes" has 6 entries.
+    """
+    from engine.data_loader import (
+        GRANULAR_CLASSES, load_ocr_granular, load_upr_dac_granular,
+        load_ulae_granular, load_paid_claims, load_paid_claims_granular,
+    )
+
+    start = time.time()
+    if verbose:
+        print(f"\n{'='*60}")
+        print(f"  AMVS NIC NON-LIFE SUMMARY (6-class) — client: {client_id}")
+        print(f"{'='*60}")
+
+    base = run_nic_summary(client_id=client_id, verbose=False)
+    ocr_g  = load_ocr_granular(client_id=client_id)
+    upr_g  = load_upr_dac_granular(client_id=client_id)
+    ulae_g = load_ulae_granular(client_id=client_id)
+    paid_g = load_paid_claims_granular(client_id=client_id)
+
+    allocable = ("Bonds", "Engineering", "Marine")
+    weights = {cls: ocr_g[cls]["gross"] + upr_g[cls]["gross_upr"] for cls in allocable}
+
+    others_gross_ibnr = _allocate_others(base["by_class"]["Others"]["gross"]["ibnr"], weights)
+    others_net_ibnr    = _allocate_others(base["by_class"]["Others"]["net"]["ibnr"], weights)
+    others_ulae         = _allocate_others(base["by_class"]["Others"]["gross"]["ulae"], weights)
+
+    by_class: dict = {}
+    for cls in GRANULAR_CLASSES:
+        if cls in base["by_class"]:
+            # Motor / Fire / Accident: IBNR + ULAE from the already-
+            # validated 4-bucket engine; OCR/UPR/DAC from the granular
+            # loaders (correct for all 6 classes — see docstring above for
+            # why the 4-bucket OCR specifically can't be reused for Fire/Accident).
+            gross_ibnr = base["by_class"][cls]["gross"]["ibnr"]
+            net_ibnr   = base["by_class"][cls]["net"]["ibnr"]
+            gross_ulae = base["by_class"][cls]["gross"]["ulae"]
+        else:
+            # Bonds / Engineering / Marine: IBNR + ULAE allocated from the
+            # combined 4-bucket "Others" total — see docstring above.
+            gross_ibnr = round(others_gross_ibnr[cls], 2)
+            net_ibnr   = round(others_net_ibnr[cls], 2)
+            gross_ulae = round(others_ulae[cls], 2)
+
+        gross_ocr, net_ocr = round(ocr_g[cls]["gross"], 2), round(ocr_g[cls]["net"], 2)
+        gross_upr, net_upr = round(upr_g[cls]["gross_upr"], 2), round(upr_g[cls]["net_upr"], 2)
+        gross_dac, net_dac = round(upr_g[cls]["gross_dac"], 2), round(upr_g[cls]["net_dac"], 2)
+        by_class[cls] = {
+            "gross": {"ibnr": gross_ibnr, "ocr": gross_ocr, "ulae": gross_ulae, "upr": gross_upr, "dac": gross_dac},
+            "net":   {"ibnr": net_ibnr,   "ocr": net_ocr,   "ulae": gross_ulae, "upr": net_upr,   "dac": net_dac},
+            "ri":    {"ibnr": round(gross_ibnr - net_ibnr, 2), "ocr": round(gross_ocr - net_ocr, 2),
+                      "ulae": 0.0, "upr": round(gross_upr - net_upr, 2), "dac": round(gross_dac - net_dac, 2)},
+        }
+
+    totals = {"gross": {}, "net": {}, "ri": {}}
+    for basis in ("gross", "net", "ri"):
+        for metric in ("ibnr", "ocr", "ulae", "upr", "dac"):
+            totals[basis][metric] = round(sum(by_class[cls][basis][metric] for cls in GRANULAR_CLASSES), 2)
+
+    elapsed = time.time() - start
+    if verbose:
+        print(f"  Total Gross IBNR: GHS {totals['gross']['ibnr']:,.2f}")
+        print(f"  Completed in {elapsed:.2f} seconds")
+        print(f"{'='*60}\n")
+
+    return {
+        "run_type":        "nic_summary_granular",
+        "classes":         GRANULAR_CLASSES,
+        "by_class":        by_class,
+        "totals":          totals,
+        "elapsed_seconds": round(elapsed, 2),
+        "allocation_note": (
+            "Bonds/Engineering/Marine IBNR and ULAE are allocated from the "
+            "combined 'Others' total in proportion to each class's OCR+UPR — "
+            "a disclosed proxy, not PIC's real per-class split. Motor, Fire, "
+            "and Accident are unaffected and match PIC's real published "
+            "figures directly."
+        ),
+    }
+
+
+def load_paid_claims_granular_allocated(client_id: str = "pic") -> Dict[str, float]:
+    """
+    Paid claims (data_loader.load_paid_claims_granular()'s counterpart) with
+    Bonds/Engineering/Marine filled in via the same OCR+UPR-proportional
+    allocation as run_nic_summary_granular() — needed by
+    engine.journals.generate_nonlife_journal() when posting a 6-class
+    journal, since journals.py takes a flat {class: paid_claims} dict keyed
+    by whatever classes are in the statement set.
+    """
+    from engine.data_loader import load_ocr_granular, load_paid_claims, load_paid_claims_granular, load_upr_dac_granular
+
+    paid_g = load_paid_claims_granular(client_id=client_id)
+    others_total = load_paid_claims(client_id=client_id)["Others"]
+
+    ocr_g = load_ocr_granular(client_id=client_id)
+    upr_g = load_upr_dac_granular(client_id=client_id)
+    allocable = ("Bonds", "Engineering", "Marine")
+    weights = {cls: ocr_g[cls]["gross"] + upr_g[cls]["gross_upr"] for cls in allocable}
+    allocated = _allocate_others(others_total, weights)
+
+    result = dict(paid_g)
+    for cls in allocable:
+        result[cls] = round(allocated[cls], 2)
+    return result
 
 
 # ── Quick test ────────────────────────────────────────────────────────────────

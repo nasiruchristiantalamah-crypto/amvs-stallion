@@ -90,12 +90,19 @@ from engine.clients import ClientConfig, load_client
 
 RESERVING_CLASSES = ["Motor", "Fire", "Accident", "Others"]
 
+# The 6-class breakdown PIC's (and presumably most Ghanaian non-life
+# insurers') own published reports actually use — "Others" above is a
+# reserving-engine-only grouping forced by the IBNR triangle workbook only
+# having 4 sheets (see GRANULAR_CLASSES section below for why IBNR alone
+# can't be split this finely without an allocation step).
+GRANULAR_CLASSES = ["Motor", "Fire", "Accident", "Bonds", "Engineering", "Marine"]
+
 # Net (reinsurance) blocks sit this many columns to the right of the
 # matching Gross block, consistently, in the shared workbook template.
 NET_COLUMN_OFFSET = 13
 
 
-# ── Class-of-business bucketing ─────────────────────────────────────────────
+# ── Class-of-business bucketing (4-class — drives reserving/IBNR) ──────────
 #
 # The raw source workbooks don't use one consistent taxonomy — the
 # Outstanding Claims register alone uses product-level labels like "GROUP
@@ -118,6 +125,66 @@ def _bucket(raw_label: str) -> str:
     if "accident" in label:
         return "Accident"
     return "Others"
+
+
+# ── Class-of-business bucketing (6-class GRANULAR — matches published reports) ─
+#
+# PIC's UPR & DAC and ULAE workbooks already store Bonds/Engineering/Marine
+# as their OWN rows, spelled slightly differently from the report
+# ("Fire, Theft and Property" -> "Fire", "Marine and Aviation" -> "Marine")
+# — _GRANULAR_LABEL_ALIASES below normalises those, confirmed by matching
+# every class total dollar-for-dollar against PIC's real published Balance
+# Sheet (see clients/pic/assumptions.yaml's ocr_class_mapping comment).
+#
+# The Outstanding Claims (OCR) register is the odd one out: it uses
+# PRODUCT-level labels ("PLANT AND MACHINERY", "GOODS IN TRANSIT", "ASSETS
+# ALL RISK", ...) that don't correspond to report classes by keyword at
+# all — e.g. "GOODS IN TRANSIT" (which sounds like Marine cargo) actually
+# reports under PIC's "Accident" class, and "PLANT AND MACHINERY" reports
+# under "Engineering", not "Motor". This mapping is genuinely
+# insurer-specific (each company's own product-to-class convention), so it
+# is NOT guessed by keyword here — it must be configured per client (see
+# ClientConfig.ocr_class_mapping, sourced from assumptions.yaml). A raw
+# label with no configured mapping and no obvious Motor/Fire/Accident
+# keyword match falls into "Unclassified" rather than being silently
+# dropped or guessed into the wrong class.
+_GRANULAR_LABEL_ALIASES = {
+    "fire, theft and property": "Fire",
+    "marine and aviation":      "Marine",
+    "accident":                 "Accident",
+    "bonds":                    "Bonds",
+    "engineering":               "Engineering",
+    "motor":                     "Motor",
+}
+
+
+def _bucket_granular(raw_label: str, ocr_class_mapping: Optional[Dict[str, str]] = None) -> str:
+    """
+    Resolve a raw class-of-business label to one of GRANULAR_CLASSES, or
+    "Unclassified" if it can't be resolved — see module docstring above.
+    Tries, in order: (1) the known UPR/DAC/ULAE label spellings, (2) a
+    client-configured product->class mapping (for OCR's product-level
+    labels), (3) a generic Motor/Fire/Accident keyword fallback.
+    """
+    if not raw_label:
+        return "Unclassified"
+    label = str(raw_label).strip().lower()
+
+    if label in _GRANULAR_LABEL_ALIASES:
+        return _GRANULAR_LABEL_ALIASES[label]
+
+    if ocr_class_mapping:
+        mapped = ocr_class_mapping.get(label) or ocr_class_mapping.get(str(raw_label).strip())
+        if mapped:
+            return mapped
+
+    if "motor" in label:
+        return "Motor"
+    if "fire" in label:
+        return "Fire"
+    if "accident" in label:
+        return "Accident"
+    return "Unclassified"
 
 
 # ── Workbook helpers ─────────────────────────────────────────────────────────
@@ -319,6 +386,56 @@ def _parse_premium_table(rows: List[tuple]) -> Tuple[Dict[int, float], Dict[int,
     return gross_premium, net_premium
 
 
+# ── 1b. IBNR / URR split, by class (optional — see docstring) ──────────────
+
+def load_ibnr_urr_split(client_id: str = "pic", basis: str = "gross") -> Dict[str, Dict[str, float]]:
+    """
+    Read the client's own IBNR/URR split, if they produce one — see
+    clients/pic/assumptions.yaml's bel_workbook comment for what URR
+    (Unexpired Risk Reserve) is and why it needs excluding from LIC. The
+    workbook this reads has the same Motor/Fire/Accident/Others sheet
+    layout as the IBNR triangle workbook, with a "Total" row per class
+    holding columns (0-indexed, values only — this workbook's layout is
+    more idiosyncratic than the others, so positions are relied on
+    directly rather than searched for by header text): 0=Underwriting Year
+    label ("Total"), 1=GWP, 2=OS, 3=IBNR+URR combined, 4=IBNR (pure),
+    5=URR, 6=Paid Claims, 7=Ult Loss Ratios.
+
+    Parameters:
+        basis : "gross" (bel_workbook) or "net" (bel_net_workbook)
+
+    Raises ValueError if this client hasn't configured the relevant
+    workbook — callers should catch this and fall back to the combined
+    chain-ladder IBNR+URR figure; not every client will produce this
+    refinement.
+
+    Returns:
+        {"Motor": {"ibnr": float, "urr": float}, "Fire": {...}, ...}
+    """
+    if basis not in ("gross", "net"):
+        raise ValueError(f"basis must be 'gross' or 'net', got {basis!r}")
+    data_key = "bel_workbook" if basis == "gross" else "bel_net_workbook"
+
+    client = load_client(client_id)
+    if data_key not in client.data_files:
+        raise ValueError(
+            f"Client '{client_id}' has no '{data_key}' configured in assumptions.yaml's "
+            f"data_files — this client doesn't produce an IBNR/URR split; fall back to "
+            f"the combined chain-ladder IBNR+URR figure instead."
+        )
+
+    result: Dict[str, Dict[str, float]] = {}
+    for cls in RESERVING_CLASSES:
+        rows = _read_sheet_rows(client, data_key, cls)
+        for row in rows:
+            if _cell(row, 0) == "Total":
+                result[cls] = {"ibnr": float(_cell(row, 4) or 0.0), "urr": float(_cell(row, 5) or 0.0)}
+                break
+        else:
+            raise ValueError(f"Could not find a 'Total' row in the '{cls}' sheet of {client.data_files[data_key]}")
+    return result
+
+
 # ── 2. Outstanding claims / OCR (case reserves), by class ──────────────────
 
 def load_ocr(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
@@ -342,6 +459,22 @@ def load_ocr(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
         {"Motor": {"gross": float, "net": float}, "Fire": {...}, ...}
     """
     client = load_client(client_id)
+    rows, class_col, gross_col, net_col, field_header_idx = _parse_ocr_sheet(client)
+
+    totals = {c: {"gross": 0.0, "net": 0.0} for c in RESERVING_CLASSES}
+    for row in rows[field_header_idx + 1:]:
+        class_label = _cell(row, class_col)
+        if not class_label:
+            continue
+        bucket = _bucket(class_label)
+        totals[bucket]["gross"] += abs(float(_cell(row, gross_col) or 0.0))
+        totals[bucket]["net"]   += abs(float(_cell(row, net_col) or 0.0))
+
+    return totals
+
+
+def _parse_ocr_sheet(client: ClientConfig) -> Tuple[List[tuple], int, int, int, int]:
+    """Shared header/column detection for load_ocr() and load_ocr_granular() — returns (rows, class_col, gross_col, net_col, field_header_idx)."""
     rows = _read_sheet_rows(client, "raw_data_workbook", "Outstanding Claims-2025")
 
     field_header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
@@ -360,13 +493,29 @@ def load_ocr(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
             "Could not locate 'Gross Amount Outstanding' / 'Net Amount Outstanding' in the row "
             "above the Outstanding Claims header — unexpected sheet layout"
         )
+    return rows, class_col, gross_col, net_col, field_header_idx
 
-    totals = {c: {"gross": 0.0, "net": 0.0} for c in RESERVING_CLASSES}
+
+def load_ocr_granular(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
+    """
+    Same source data as load_ocr(), aggregated into the 6-class breakdown
+    (GRANULAR_CLASSES) PIC's real published reports use, plus an
+    "Unclassified" bucket for any raw label that can't be resolved (see
+    _bucket_granular()) — surfaced rather than silently dropped or
+    misallocated, so an incomplete client mapping is visible in the output.
+
+    Returns:
+        {"Motor": {"gross": float, "net": float}, ..., "Unclassified": {...}}
+    """
+    client = load_client(client_id)
+    rows, class_col, gross_col, net_col, field_header_idx = _parse_ocr_sheet(client)
+
+    totals = {c: {"gross": 0.0, "net": 0.0} for c in GRANULAR_CLASSES + ["Unclassified"]}
     for row in rows[field_header_idx + 1:]:
         class_label = _cell(row, class_col)
         if not class_label:
             continue
-        bucket = _bucket(class_label)
+        bucket = _bucket_granular(class_label, client.ocr_class_mapping)
         totals[bucket]["gross"] += abs(float(_cell(row, gross_col) or 0.0))
         totals[bucket]["net"]   += abs(float(_cell(row, net_col) or 0.0))
 
@@ -414,6 +563,43 @@ def load_upr_dac(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
     return totals
 
 
+def load_upr_dac_granular(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
+    """
+    Same source data as load_upr_dac(), aggregated into the 6-class
+    breakdown (GRANULAR_CLASSES). Unlike OCR, PIC's UPR & DAC sheet already
+    stores Bonds/Engineering/Marine as their own rows — no per-client
+    mapping is needed here, just label normalisation (see
+    _GRANULAR_LABEL_ALIASES). Confirmed to match PIC's real published
+    figures to the dollar.
+
+    Returns:
+        {"Motor": {"gross_upr":.., "net_upr":.., "gross_dac":.., "net_dac":..}, ..., "Unclassified": {...}}
+    """
+    client = load_client(client_id)
+    rows = _read_sheet_rows(client, "upr_dac_workbook", client.data_files["upr_dac_sheet"])
+
+    header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
+    if header_idx is None:
+        raise ValueError("Could not locate the 'Class of Business' header row in the UPR & DAC sheet")
+    gross_upr_col = class_col + 1
+    net_upr_col   = class_col + 2
+    gross_dac_col = class_col + 3
+    net_dac_col   = class_col + 4
+
+    totals = {c: {"gross_upr": 0.0, "net_upr": 0.0, "gross_dac": 0.0, "net_dac": 0.0} for c in GRANULAR_CLASSES + ["Unclassified"]}
+    for row in rows[header_idx + 1:]:
+        label = _cell(row, class_col)
+        if not label or str(label).strip().lower() in ("total", "others"):
+            continue
+        bucket = _bucket_granular(label, client.ocr_class_mapping)
+        totals[bucket]["gross_upr"] += float(_cell(row, gross_upr_col) or 0.0)
+        totals[bucket]["net_upr"]   += float(_cell(row, net_upr_col) or 0.0)
+        totals[bucket]["gross_dac"] += float(_cell(row, gross_dac_col) or 0.0)
+        totals[bucket]["net_dac"]   += float(_cell(row, net_dac_col) or 0.0)
+
+    return totals
+
+
 # ── 4. ULAE, by class ────────────────────────────────────────────────────────
 
 def load_ulae(client_id: str = "pic") -> Dict[str, float]:
@@ -447,6 +633,44 @@ def load_ulae(client_id: str = "pic") -> Dict[str, float]:
     return totals
 
 
+def load_ulae_granular(client_id: str = "pic") -> Dict[str, float]:
+    """
+    Same source data as load_ulae(), read at 6-class resolution
+    (GRANULAR_CLASSES). NOTE: PIC's ULAE workbook only carries Bonds/
+    Engineering/Marine as a single combined "Others" row (no individual
+    breakdown exists in the source) — this function returns 0.0 for those
+    three classes, NOT PIC's real per-class split. Callers needing a
+    non-zero estimate for those three must allocate load_ulae()'s "Others"
+    total themselves — see engine/ifrs17_nonlife.py's
+    allocate_others_across_granular_classes(), which does this using each
+    class's OCR+UPR share as a disclosed proxy (PIC's real split reflects
+    actuarial judgement not visible in the source data — see that
+    function's docstring).
+
+    Returns:
+        {"Motor": float, "Fire": float, "Accident": float, "Bonds": 0.0, "Engineering": 0.0, "Marine": 0.0, "Unclassified": float}
+    """
+    client = load_client(client_id)
+    rows = _read_sheet_rows(client, "ulae_workbook", client.data_files["ulae_sheet"])
+
+    header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
+    if header_idx is None:
+        raise ValueError("Could not locate the 'Class of Business' header row in the ULAE sheet")
+    ulae_col = _find_col(rows[header_idx], "ULAE", mode="exact")
+    if ulae_col is None:
+        raise ValueError("Could not locate the 'ULAE' header column in the ULAE sheet")
+
+    totals = {c: 0.0 for c in GRANULAR_CLASSES + ["Unclassified"]}
+    for row in rows[header_idx + 1:]:
+        label = _cell(row, class_col)
+        if not label or str(label).strip().lower() in ("total", "others"):
+            continue
+        bucket = _bucket_granular(label, client.ocr_class_mapping)
+        totals[bucket] += float(_cell(row, ulae_col) or 0.0)
+
+    return totals
+
+
 # ── 5. Paid claims, by class (for journal "claims paid" movements) ─────────
 
 def load_paid_claims(client_id: str = "pic") -> Dict[str, float]:
@@ -475,6 +699,38 @@ def load_paid_claims(client_id: str = "pic") -> Dict[str, float]:
         if not label or str(label).strip().lower() == "total":
             continue
         bucket = _bucket(label)
+        totals[bucket] += float(_cell(row, paid_col) or 0.0)
+
+    return totals
+
+
+def load_paid_claims_granular(client_id: str = "pic") -> Dict[str, float]:
+    """
+    Same source data as load_paid_claims(), read at 6-class resolution.
+    Same caveat as load_ulae_granular(): Bonds/Engineering/Marine come back
+    as 0.0 here since PIC's source only carries a combined "Others" figure
+    for paid claims too — allocate load_paid_claims()'s "Others" total via
+    allocate_others_across_granular_classes() if a non-zero estimate is needed.
+
+    Returns:
+        {"Motor": float, "Fire": float, "Accident": float, "Bonds": 0.0, "Engineering": 0.0, "Marine": 0.0, "Unclassified": float}
+    """
+    client = load_client(client_id)
+    rows = _read_sheet_rows(client, "ulae_workbook", client.data_files["ulae_sheet"])
+
+    header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
+    if header_idx is None:
+        raise ValueError("Could not locate the 'Class of Business' header row in the ULAE sheet")
+    paid_col = _find_col(rows[header_idx], "Paid Claims", mode="startswith")
+    if paid_col is None:
+        raise ValueError("Could not locate the 'Paid Claims' header column in the ULAE sheet")
+
+    totals = {c: 0.0 for c in GRANULAR_CLASSES + ["Unclassified"]}
+    for row in rows[header_idx + 1:]:
+        label = _cell(row, class_col)
+        if not label or str(label).strip().lower() in ("total", "others"):
+            continue
+        bucket = _bucket_granular(label, client.ocr_class_mapping)
         totals[bucket] += float(_cell(row, paid_col) or 0.0)
 
     return totals

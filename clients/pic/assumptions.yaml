@@ -19,6 +19,40 @@ data_files:
   upr_dac_sheet:     "UPR & DAC"
   ulae_workbook:     "PIC ULAE (2025) - Final.xlsx"
   ulae_sheet:        "ULAE Calculation (Rev)"
+  # Optional — see engine/data_loader.py's load_ibnr_urr_split(). PIC's own
+  # ibnr_workbook above computes a COMBINED "IBNR + URR" figure (URR =
+  # Unexpired Risk Reserve, the portion of the chain-ladder gap
+  # attributable to risk that hasn't occurred yet because the current
+  # underwriting year's policies haven't fully run their term — already
+  # provided for via UPR/DAC on the LRC side). This workbook holds PIC's
+  # own further split of that combined figure into pure IBNR vs URR, via a
+  # payment-pattern method with manually-selected factors this engine
+  # doesn't replicate — read directly rather than re-derived, the same way
+  # UPR/DAC/ULAE are. Omit these two keys entirely for a client that
+  # doesn't produce this split; load_ibnr_urr_split() falls back to the
+  # combined chain-ladder figure (clearly flagged) when they're absent.
+  bel_workbook:      "PIC Underwriting Year BEL (2025) - Final.xlsx"
+  bel_net_workbook:  "PIC Underwriting Year BEL (2025)-Net - Final.xlsx"
+
+# Maps PIC's own Outstanding Claims product-level labels to the 6-class
+# breakdown PIC's real published reports use (Motor/Fire/Accident/Bonds/
+# Engineering/Marine) — see engine/data_loader.py's _bucket_granular().
+# Determined empirically, not guessed: each mapping below was verified by
+# summing the raw OCR amounts under it and matching PIC's real published
+# Appendix III (Breakdown of Undiscounted Liabilities) to the exact dollar
+# — e.g. "goods in transit" reports under PIC's Accident class, not Marine,
+# despite what the label alone would suggest. If PIC restructures their
+# product list, this mapping needs updating to match.
+ocr_class_mapping:
+  motor: "Motor"
+  bonds: "Bonds"
+  "plant and machinery": "Engineering"
+  "assets all risk": "Fire"
+  "combined assets all risks business interruption": "Fire"
+  "goods in transit": "Accident"
+  "workmen compensation": "Accident"
+  "money insurance": "Accident"
+  "group personal accident": "Accident"
 
 # Assumption overrides applied on top of a product's saved assumptions
 # (engine/assumptions_store.py) — a quick way to express client-level
