@@ -24,6 +24,13 @@ clients/*/client.yaml
 *.xlsx
 *.docx
 
+# EXCEPTION: the NIC's own published risk-free rate yield curve
+# (data/yield_curve.py) — a public regulatory document (not private client
+# data), committed so non-life discounting works on Railway and every dev
+# machine without depending on a real person's local OneDrive path. See
+# data/yield_curve.py's module docstring for provenance.
+!data/nic_curves/*.xlsx
+
 # OS/editor cruft
 .DS_Store
 Thumbs.db

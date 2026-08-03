@@ -10,9 +10,17 @@ What this file does:
     life side of this engine (engine/assumptions.py's valuation_rate_pa).
 
 SOURCE:
-    C:\\Users\\Christian\\OneDrive - Stallion Consultants Ltd\\Data_Nasiru
-    \\NIC Reports and Directives\\NIC Rates, Curves, and Reports
-    \\20251231_NIC_RFR_16012025.xlsx
+    data/nic_curves/20251231_NIC_RFR_16012025.xlsx — committed to this repo
+    (see .gitignore's explicit exception for this one file: everything else
+    matching *.xlsx is excluded as generated report output, but this is a
+    genuine input, and a PUBLIC one — the NIC's own published regulatory
+    curve, not private client data — so unlike clients/<id>/'s real Excel
+    workbooks it's safe to ship with the app itself rather than depend on
+    a per-machine path or an env var). This used to be an absolute path
+    into one developer's local OneDrive (a real production bug: that path
+    can't exist on Railway or any other machine, and reserving would fail
+    with a bare FileNotFoundError the moment discounting was attempted —
+    see git history around 2026-08-03 for the incident this fixed).
     Sheet "CurrentYearResult" — Ghana Cedis spot rate column, years 1-80,
     "Risk-free curves as of 31 December 2025", produced by the NIC (GHS
     fitted from GFIM observations; USD/GBP/EUR sourced separately and also
@@ -23,19 +31,24 @@ SOURCE:
     GLICO Insurance's own 2025 GMM valuation assumptions file
     (20251231_NIC_RFR_YieldCurve.xlsx), which carries the same figures.
 
+    A newer curve can be dropped in without a code change by setting the
+    NIC_RFR_CURVE_PATH environment variable (falls back to the bundled
+    file above when unset).
+
 Structure:
     {duration_year: annual spot rate}, e.g. {1: 0.1356, 2: 0.1498, ...}
 ================================================================================
 """
 
+import os
 from typing import Dict
 
 import openpyxl
 
-DEFAULT_YIELD_CURVE_PATH = (
-    r"C:\Users\Christian\OneDrive - Stallion Consultants Ltd\Data_Nasiru"
-    r"\NIC Reports and Directives\NIC Rates, Curves, and Reports\20251231_NIC_RFR_16012025.xlsx"
+_BUNDLED_YIELD_CURVE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "nic_curves", "20251231_NIC_RFR_16012025.xlsx"
 )
+DEFAULT_YIELD_CURVE_PATH = os.environ.get("NIC_RFR_CURVE_PATH") or _BUNDLED_YIELD_CURVE_PATH
 
 # 0-indexed column offset of each currency's Spot Rate column, in the
 # "CurrentYearResult" sheet's row tuples (Year, GHS Spot, GHS Fwd, blank,
@@ -56,6 +69,13 @@ def load_yield_curve(path: str = DEFAULT_YIELD_CURVE_PATH, currency: str = "GHS"
     """
     if currency not in _CURRENCY_SPOT_COLUMNS:
         raise ValueError(f"Unknown currency '{currency}' — choose from {sorted(_CURRENCY_SPOT_COLUMNS)}")
+
+    if not os.path.isfile(path):
+        raise ValueError(
+            f"NIC RFR yield curve not found at '{path}'. This should be the bundled "
+            f"data/nic_curves/20251231_NIC_RFR_16012025.xlsx unless NIC_RFR_CURVE_PATH is "
+            f"set to something else — check that environment variable if this is unexpected."
+        )
 
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
