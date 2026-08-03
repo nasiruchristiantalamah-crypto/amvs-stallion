@@ -616,49 +616,149 @@
     <div class="page" id="page-assumptions">
       <div class="topbar">
         <div class="page-title">⚙️ Assumptions</div>
-        <span class="badge-blue">Current basis</span>
+        <span class="badge-blue" id="am-basis-badge">Ghana Market Defaults</span>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">💀 Mortality</div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px">
+          <div style="min-width:220px;flex:1">
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Mortality table</label>
+            <select id="am-mortality-table">
+              <option value="GNM 2020">GNM 2020 (Ghana approximation)</option>
+              <option value="SA 85/90">SA 85/90</option>
+              <option value="custom">Upload custom table…</option>
+            </select>
+          </div>
+          <div style="min-width:260px;flex:1.5">
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Mortality loading: <span id="am-mortality-loading-display">-20%</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input type="range" id="am-mortality-loading-slider" min="-50" max="100" step="1" value="-20" style="flex:1" oninput="syncMortalityLoadingFromSlider()">
+              <input type="number" id="am-mortality-loading" min="-50" max="100" step="0.1" value="-20" style="width:80px" oninput="syncMortalityLoadingFromNumber()">
+            </div>
+          </div>
+          <div style="min-width:160px;flex:1">
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Gender basis</label>
+            <select id="am-gender-basis">
+              <option value="unisex">Unisex</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">📉 Lapse assumptions <span style="font-weight:normal;color:#888;font-size:12px">— annual rate by policy year</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Policy year</th><th>Annual lapse rate (%)</th><th></th></tr></thead>
+            <tbody id="am-lapse-body"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn btn-primary" onclick="addAssumptionRow('am-lapse-body', 'lapse')">+ Add year</button>
+          <button class="btn" onclick="resetSectionToGhanaDefaults('lapse')">↺ Reset to Ghana defaults</button>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">💼 Commission assumptions <span style="font-weight:normal;color:#888;font-size:12px">— rate by policy year</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Policy year</th><th>Commission rate (%)</th><th></th></tr></thead>
+            <tbody id="am-commission-body"></tbody>
+          </table>
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn btn-primary" onclick="addAssumptionRow('am-commission-body', 'commission')">+ Add year</button>
+          <button class="btn" onclick="resetSectionToGhanaDefaults('commission')">↺ Reset to Ghana defaults</button>
+        </div>
       </div>
 
       <div class="results-grid">
         <div class="panel">
+          <div class="panel-title">💸 Expense assumptions</div>
+          <div class="result-row"><span class="result-label">Policy fee (GHS/month)</span><input type="number" id="am-exp-policy-fee" step="0.01" style="width:120px"></div>
+          <div class="result-row"><span class="result-label">Acquisition cost (GHS, one-time)</span><input type="number" id="am-exp-acquisition" step="0.01" style="width:120px"></div>
+          <div class="result-row"><span class="result-label">Renewal expense (GHS/year)</span><input type="number" id="am-exp-renewal" step="0.01" style="width:120px"></div>
+          <div class="result-row"><span class="result-label">Claims admin cost (GHS/claim)</span><input type="number" id="am-exp-claims-admin" step="0.01" style="width:120px"></div>
+          <div class="result-row">
+            <span class="result-label">Expense inflation: <span id="am-exp-inflation-display">12%</span></span>
+            <div style="display:flex;gap:6px;align-items:center;width:180px">
+              <input type="range" id="am-exp-inflation-slider" min="0" max="30" step="0.5" style="flex:1" oninput="syncPairFromSlider('am-exp-inflation-slider','am-exp-inflation','am-exp-inflation-display')">
+              <input type="number" id="am-exp-inflation" step="0.1" style="width:70px" oninput="syncPairFromNumber('am-exp-inflation-slider','am-exp-inflation','am-exp-inflation-display')">
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
           <div class="panel-title">💹 Economic assumptions</div>
-          <div class="result-row"><span class="result-label">Valuation interest rate (p.a.)</span><span class="result-value">16.5%</span></div>
-          <div class="result-row"><span class="result-label">Investment return (p.a.)</span><span class="result-value">14.0%</span></div>
-          <div class="result-row"><span class="result-label">Locked-in rate (IFRS 17 CSM)</span><span class="result-value">16.5%</span></div>
-          <div class="result-row"><span class="result-label">Expense inflation (p.a.)</span><span class="result-value">12.0%</span></div>
-          <div class="result-row"><span class="result-label">USD risk-free rate</span><span class="result-value">4.5%</span></div>
-          <div class="result-row"><span class="result-label">GHS/USD FX rate</span><span class="result-value">15.50</span></div>
+          <div class="result-row"><span class="result-label">Valuation interest rate (% p.a.)</span><input type="number" id="am-eco-valuation-rate" step="0.1" style="width:120px"></div>
+          <div class="result-row"><span class="result-label">Investment return (% p.a.)</span><input type="number" id="am-eco-investment-return" step="0.1" style="width:120px"></div>
+          <div class="result-row"><span class="result-label">Locked-in rate (IFRS 17 CSM, % p.a.)</span><input type="number" id="am-eco-locked-in-rate" step="0.1" style="width:120px"></div>
+          <div class="result-row"><span class="result-label">GHS/USD FX rate</span><input type="number" id="am-eco-fx-rate" step="0.01" style="width:120px"></div>
         </div>
 
         <div class="panel">
-          <div class="panel-title">💸 Expenses & commissions</div>
-          <div class="result-row"><span class="result-label">Initial commission</span><span class="result-value">15% (Tier 1 & 2) / 12% (Tier 3)</span></div>
-          <div class="result-row"><span class="result-label">Renewal commission</span><span class="result-value">2%</span></div>
-          <div class="result-row"><span class="result-label">Premium collection rate</span><span class="result-value">70% (Tier 1) / 75% (Tier 2) / 80% (Tier 3)</span></div>
-          <div class="result-row"><span class="result-label">Policy fee (monthly)</span><span class="result-value">GHS 1.00 / 1.50 / 2.00</span></div>
-          <div class="result-row"><span class="result-label">Acquisition cost (one-time)</span><span class="result-value">GHS 8 / 12 / 18</span></div>
-          <div class="result-row"><span class="result-label">Renewal expense (annual)</span><span class="result-value">GHS 18 / 24 / 30</span></div>
+          <div class="panel-title">🛡️ Risk adjustment</div>
+          <div class="result-row">
+            <span class="result-label">Method</span>
+            <select id="am-ra-method" style="width:180px">
+              <option value="cost_of_capital">Cost of Capital</option>
+              <option value="confidence_level">Confidence Interval</option>
+            </select>
+          </div>
+          <div class="result-row"><span class="result-label">CoC rate (% p.a.)</span><input type="number" id="am-ra-coc-rate" step="0.1" style="width:120px"></div>
+          <div class="result-row"><span class="result-label">Solvency capital (GHS)</span><input type="number" id="am-ra-solvency-capital" step="1000" style="width:120px"></div>
+          <div class="result-row"><span class="result-label">Confidence level (%)</span><input type="number" id="am-ra-confidence-level" step="1" style="width:120px"></div>
         </div>
 
         <div class="panel">
-          <div class="panel-title">💀 Mortality</div>
-          <div class="result-row"><span class="result-label">Mortality table</span><span class="result-value">Ghana GNM 2020 (approximated)</span></div>
-          <div class="result-row"><span class="result-label">Standard loading</span><span class="result-value">−20% (lighter)</span></div>
-          <div class="result-row"><span class="result-label">Gender basis</span><span class="result-value">Unisex</span></div>
-          <div class="result-row"><span class="result-label">Maximum projection age</span><span class="result-value">80</span></div>
-          <div class="result-row"><span class="result-label">Year-1 lapse rate</span><span class="result-value">25%</span></div>
-          <div class="result-row"><span class="result-label">Ultimate lapse rate</span><span class="result-value">2% (year 13+)</span></div>
+          <div class="panel-title">🎯 Pricing targets</div>
+          <div class="result-row">
+            <span class="result-label">Target profit margin: <span id="am-price-margin-display">15%</span></span>
+            <div style="display:flex;gap:6px;align-items:center;width:180px">
+              <input type="range" id="am-price-margin-slider" min="0" max="50" step="0.5" style="flex:1" oninput="syncPairFromSlider('am-price-margin-slider','am-price-margin','am-price-margin-display')">
+              <input type="number" id="am-price-margin" step="0.1" style="width:70px" oninput="syncPairFromNumber('am-price-margin-slider','am-price-margin','am-price-margin-display')">
+            </div>
+          </div>
+          <div class="result-row">
+            <span class="result-label">Premium collection rate: <span id="am-price-collection-display">70%</span></span>
+            <div style="display:flex;gap:6px;align-items:center;width:180px">
+              <input type="range" id="am-price-collection-slider" min="0" max="100" step="1" style="flex:1" oninput="syncPairFromSlider('am-price-collection-slider','am-price-collection','am-price-collection-display')">
+              <input type="number" id="am-price-collection" step="0.1" style="width:70px" oninput="syncPairFromNumber('am-price-collection-slider','am-price-collection','am-price-collection-display')">
+            </div>
+          </div>
+          <div class="result-row">
+            <span class="result-label">Premium mode</span>
+            <select id="am-price-mode" style="width:150px">
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Quarterly</option>
+              <option value="annual">Annual</option>
+              <option value="single">Single</option>
+              <option value="daily">Daily</option>
+            </select>
+          </div>
         </div>
+      </div>
 
-        <div class="panel">
-          <div class="panel-title">🏥 Morbidity & risk adjustment</div>
-          <div class="result-row"><span class="result-label">TPD incidence rate (p.a.)</span><span class="result-value">0.10%</span></div>
-          <div class="result-row"><span class="result-label">Hospitalisation rate (p.a.)</span><span class="result-value">0.25%</span></div>
-          <div class="result-row"><span class="result-label">Average hospital stay</span><span class="result-value">5 days per episode</span></div>
-          <div class="result-row"><span class="result-label">RA method</span><span class="result-value">Cost of Capital (CoC)</span></div>
-          <div class="result-row"><span class="result-label">CoC rate</span><span class="result-value">6%</span></div>
-          <div class="result-row"><span class="result-label">Solvency capital</span><span class="result-value">GHS 500,000</span></div>
+      <div class="panel" style="margin-top:4px">
+        <div class="panel-title">💾 Save / Load this basis</div>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
+          <div style="flex:1;min-width:220px">
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Name this assumption set</label>
+            <input type="text" id="am-save-name" placeholder="e.g. PIC Pricing Basis 2025">
+          </div>
+          <button class="btn btn-gold" onclick="saveAssumptionSet()" id="am-btn-save">💾 Save assumptions</button>
+          <div style="flex:1;min-width:220px">
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Load a saved set</label>
+            <select id="am-load-select"><option value="">— Select a saved set —</option></select>
+          </div>
+          <button class="btn btn-primary" onclick="loadSelectedAssumptionSet()" id="am-btn-load">📂 Load assumptions</button>
+          <button class="btn" onclick="resetAllToGhanaDefaults()" id="am-btn-reset">↺ Reset to Ghana defaults</button>
         </div>
+        <div id="am-status" style="font-size:13px;margin-top:10px"></div>
       </div>
     </div>
 
@@ -814,6 +914,7 @@ function showPage(id, el) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
   el.classList.add('active');
+  if (id === 'assumptions') onAssumptionsPageShown();
 }
 
 // Switch tabs inside IFRS 17 page
@@ -1300,6 +1401,252 @@ async function downloadUploadWord() {
   btn.innerHTML = original;
   btn.disabled = false;
 }
+
+// ── Assumptions editor ───────────────────────────────────────────────────────
+// Every field here maps 1:1 onto engine.assumptions_manager.AssumptionSet's
+// nested shape (see GET /assumptions/defaults) — percentages are edited as
+// whole numbers in the UI (e.g. "-20") and converted to/from decimal
+// fractions (-0.20) only at the render/collect boundary.
+let ghanaDefaultsCache          = null;
+let assumptionsPageInitialized  = false;
+let assumptionsCurrentName      = 'Ghana Market Defaults';
+let savedAssumptionSets         = [];
+
+async function onAssumptionsPageShown() {
+  if (!assumptionsPageInitialized) {
+    await resetAllToGhanaDefaults();
+    assumptionsPageInitialized = true;
+  }
+  refreshSavedAssumptionsList();
+}
+
+function _rateRowHtml(kind, year, ratePercent) {
+  return `<tr>
+    <td><input type="number" class="am-${kind}-year" value="${year}" min="1" style="width:90px"></td>
+    <td><input type="number" class="am-${kind}-rate" value="${ratePercent}" step="0.1" style="width:90px"></td>
+    <td><button class="btn" onclick="this.closest('tr').remove()" style="padding:4px 10px" title="Remove this year">✕</button></td>
+  </tr>`;
+}
+
+function renderRatesTable(tbodyId, kind, ratesObj) {
+  const tbody = document.getElementById(tbodyId);
+  const years = Object.keys(ratesObj || {}).map(Number).sort((a, b) => a - b);
+  tbody.innerHTML = years.map(y => _rateRowHtml(kind, y, (ratesObj[y] * 100).toFixed(2))).join('');
+}
+
+function addAssumptionRow(tbodyId, kind) {
+  const tbody = document.getElementById(tbodyId);
+  const yearInputs = tbody.querySelectorAll(`.am-${kind}-year`);
+  const maxYear = yearInputs.length ? Math.max(...Array.from(yearInputs).map(el => parseInt(el.value) || 0)) : 0;
+  tbody.insertAdjacentHTML('beforeend', _rateRowHtml(kind, maxYear + 1, '0.00'));
+}
+
+function collectRatesTable(tbodyId, kind) {
+  const tbody = document.getElementById(tbodyId);
+  const yearInputs = tbody.querySelectorAll(`.am-${kind}-year`);
+  const rateInputs = tbody.querySelectorAll(`.am-${kind}-rate`);
+  const result = {};
+  for (let i = 0; i < yearInputs.length; i++) {
+    const y = parseInt(yearInputs[i].value);
+    const r = parseFloat(rateInputs[i].value) / 100;
+    if (!isNaN(y) && !isNaN(r)) result[y] = r;
+  }
+  return result;
+}
+
+function resetSectionToGhanaDefaults(section) {
+  if (!ghanaDefaultsCache) return;
+  if (section === 'lapse')      renderRatesTable('am-lapse-body', 'lapse', ghanaDefaultsCache.lapses);
+  if (section === 'commission') renderRatesTable('am-commission-body', 'commission', ghanaDefaultsCache.commissions);
+}
+
+function syncMortalityLoadingFromSlider() { syncPairFromSlider('am-mortality-loading-slider', 'am-mortality-loading', 'am-mortality-loading-display'); }
+function syncMortalityLoadingFromNumber() { syncPairFromNumber('am-mortality-loading-slider', 'am-mortality-loading', 'am-mortality-loading-display'); }
+
+function syncPairFromSlider(sliderId, numberId, displayId) {
+  const v = document.getElementById(sliderId).value;
+  document.getElementById(numberId).value = v;
+  document.getElementById(displayId).textContent = v + '%';
+}
+function syncPairFromNumber(sliderId, numberId, displayId) {
+  const v = document.getElementById(numberId).value;
+  document.getElementById(sliderId).value = v;
+  document.getElementById(displayId).textContent = v + '%';
+}
+
+function renderAssumptionsForm(set) {
+  document.getElementById('am-mortality-table').value = set.mortality.table;
+  const loadingPct = (set.mortality.loading * 100).toFixed(1);
+  document.getElementById('am-mortality-loading').value = loadingPct;
+  document.getElementById('am-mortality-loading-slider').value = loadingPct;
+  document.getElementById('am-mortality-loading-display').textContent = loadingPct + '%';
+  document.getElementById('am-gender-basis').value = set.mortality.gender_basis;
+
+  renderRatesTable('am-lapse-body', 'lapse', set.lapses);
+  renderRatesTable('am-commission-body', 'commission', set.commissions);
+
+  document.getElementById('am-exp-policy-fee').value    = set.expenses.policy_fee;
+  document.getElementById('am-exp-acquisition').value   = set.expenses.acquisition_cost;
+  document.getElementById('am-exp-renewal').value       = set.expenses.renewal_expense;
+  document.getElementById('am-exp-claims-admin').value  = set.expenses.claims_admin;
+  const inflPct = (set.expenses.inflation_rate * 100).toFixed(1);
+  document.getElementById('am-exp-inflation').value          = inflPct;
+  document.getElementById('am-exp-inflation-slider').value    = inflPct;
+  document.getElementById('am-exp-inflation-display').textContent = inflPct + '%';
+
+  document.getElementById('am-eco-valuation-rate').value    = (set.economic.valuation_rate * 100).toFixed(2);
+  document.getElementById('am-eco-investment-return').value = (set.economic.investment_return * 100).toFixed(2);
+  document.getElementById('am-eco-locked-in-rate').value    = (set.economic.locked_in_rate * 100).toFixed(2);
+  document.getElementById('am-eco-fx-rate').value            = set.economic.fx_rate;
+
+  document.getElementById('am-ra-method').value              = set.risk_adjustment.method;
+  document.getElementById('am-ra-coc-rate').value            = (set.risk_adjustment.coc_rate * 100).toFixed(2);
+  document.getElementById('am-ra-solvency-capital').value    = set.risk_adjustment.solvency_capital;
+  document.getElementById('am-ra-confidence-level').value    = (set.risk_adjustment.confidence_level * 100).toFixed(1);
+
+  const marginPct = (set.pricing.profit_margin * 100).toFixed(1);
+  document.getElementById('am-price-margin').value          = marginPct;
+  document.getElementById('am-price-margin-slider').value    = marginPct;
+  document.getElementById('am-price-margin-display').textContent = marginPct + '%';
+
+  const collPct = (set.pricing.collection_rate * 100).toFixed(1);
+  document.getElementById('am-price-collection').value       = collPct;
+  document.getElementById('am-price-collection-slider').value = collPct;
+  document.getElementById('am-price-collection-display').textContent = collPct + '%';
+
+  document.getElementById('am-price-mode').value = set.pricing.premium_mode;
+}
+
+function collectAssumptionsFromForm() {
+  const inflationRate = parseFloat(document.getElementById('am-exp-inflation').value) / 100;
+  return {
+    name:        assumptionsCurrentName,
+    description: '',
+    client_id:   null,
+    created_by:  null,
+    mortality: {
+      table:        document.getElementById('am-mortality-table').value,
+      loading:      parseFloat(document.getElementById('am-mortality-loading').value) / 100,
+      gender_basis: document.getElementById('am-gender-basis').value,
+    },
+    lapses:      collectRatesTable('am-lapse-body', 'lapse'),
+    commissions: collectRatesTable('am-commission-body', 'commission'),
+    expenses: {
+      policy_fee:       parseFloat(document.getElementById('am-exp-policy-fee').value),
+      acquisition_cost: parseFloat(document.getElementById('am-exp-acquisition').value),
+      renewal_expense:  parseFloat(document.getElementById('am-exp-renewal').value),
+      claims_admin:     parseFloat(document.getElementById('am-exp-claims-admin').value),
+      inflation_rate:   inflationRate,
+    },
+    economic: {
+      valuation_rate:    parseFloat(document.getElementById('am-eco-valuation-rate').value) / 100,
+      investment_return: parseFloat(document.getElementById('am-eco-investment-return').value) / 100,
+      expense_inflation: inflationRate,
+      fx_rate:           parseFloat(document.getElementById('am-eco-fx-rate').value),
+      locked_in_rate:    parseFloat(document.getElementById('am-eco-locked-in-rate').value) / 100,
+    },
+    risk_adjustment: {
+      method:            document.getElementById('am-ra-method').value,
+      coc_rate:          parseFloat(document.getElementById('am-ra-coc-rate').value) / 100,
+      solvency_capital:  parseFloat(document.getElementById('am-ra-solvency-capital').value),
+      confidence_level:  parseFloat(document.getElementById('am-ra-confidence-level').value) / 100,
+    },
+    pricing: {
+      profit_margin:   parseFloat(document.getElementById('am-price-margin').value) / 100,
+      collection_rate: parseFloat(document.getElementById('am-price-collection').value) / 100,
+      premium_mode:    document.getElementById('am-price-mode').value,
+    },
+  };
+}
+
+async function resetAllToGhanaDefaults() {
+  const statusEl = document.getElementById('am-status');
+  try {
+    if (!ghanaDefaultsCache) {
+      const r = await apiFetch('/assumptions/defaults');
+      const d = await r.json();
+      if (!d.success) throw new Error(d.detail);
+      ghanaDefaultsCache = d.data;
+    }
+    assumptionsCurrentName = 'Ghana Market Defaults';
+    renderAssumptionsForm(ghanaDefaultsCache);
+    document.getElementById('am-basis-badge').textContent = 'Ghana Market Defaults';
+    statusEl.innerHTML = '';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+  }
+}
+
+async function saveAssumptionSet() {
+  const name = document.getElementById('am-save-name').value.trim();
+  const statusEl = document.getElementById('am-status');
+  if (!name) {
+    statusEl.innerHTML = '<span style="color:red">Enter a name for this assumption set first.</span>';
+    return;
+  }
+
+  const btn = document.getElementById('am-btn-save');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Saving...';
+  btn.disabled = true;
+  try {
+    const payload = collectAssumptionsFromForm();
+    const r = await apiFetch('/assumptions/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description: '', assumptions: payload }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    assumptionsCurrentName = name;
+    document.getElementById('am-basis-badge').textContent = name;
+    statusEl.innerHTML = `<span style="color:#2a7">✓ Saved as "${_escapeHtml(name)}"</span>`;
+    await refreshSavedAssumptionsList();
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+async function refreshSavedAssumptionsList() {
+  try {
+    const r = await apiFetch('/assumptions/list');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    savedAssumptionSets = d.data;
+    const sel = document.getElementById('am-load-select');
+    sel.innerHTML = '<option value="">— Select a saved set —</option>' +
+      savedAssumptionSets.map(s => `<option value="${s.id}">${_escapeHtml(s.name)}</option>`).join('');
+  } catch (e) {
+    // Non-fatal — the editor still works fully without a saved-sets list.
+  }
+}
+
+function loadSelectedAssumptionSet() {
+  const sel = document.getElementById('am-load-select');
+  const id = parseInt(sel.value);
+  const statusEl = document.getElementById('am-status');
+  if (!id) {
+    statusEl.innerHTML = '<span style="color:red">Select a saved assumption set first.</span>';
+    return;
+  }
+  const found = savedAssumptionSets.find(s => s.id === id);
+  if (!found) {
+    statusEl.innerHTML = '<span style="color:red">Could not find that saved set.</span>';
+    return;
+  }
+  assumptionsCurrentName = found.name;
+  renderAssumptionsForm(found.assumptions);
+  document.getElementById('am-basis-badge').textContent = found.name;
+  statusEl.innerHTML = `<span style="color:#2a7">✓ Loaded "${_escapeHtml(found.name)}"</span>`;
+}
+
+// Exposed so other pages (Pricing, IFRS 17, Rate Table) can include the
+// dashboard's current assumptions basis in their own API calls.
+window.getCurrentAssumptionsPayload = function() {
+  return collectAssumptionsFromForm();
+};
 </script>
 </body>
 </html>
