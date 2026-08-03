@@ -532,6 +532,47 @@
       </div>
 
       <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">📤 Or upload your own client data</div>
+        <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
+          Upload the 4 required workbooks — named exactly as PIC's own workbook template
+          expects (IBNR Projection, Outstanding Claims/Final Data, UPR &amp; DAC, ULAE) —
+          to run the same reserving engine against a different insurer's data, without
+          any server-side configuration.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px">
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Workbooks (.xlsx, multiple)</label>
+            <input type="file" id="upload-files-input" accept=".xlsx" multiple onchange="onUploadFilesSelected()">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Client name</label>
+            <input type="text" id="upload-client-name" placeholder="e.g. Acme Insurance Ltd" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Valuation date / period</label>
+            <input type="text" id="upload-valuation-date" value="FY2025" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;width:110px">
+          </div>
+          <button class="btn btn-gold" onclick="runUploadReserving()" id="btn-upload-run">▶ Run Reserving</button>
+        </div>
+        <span id="upload-files-info" style="font-size:12px;color:#888"></span>
+        <div id="upload-status" style="font-size:13px;margin-top:8px"></div>
+        <div id="upload-results-actions" style="display:none;margin-top:12px">
+          <button class="btn btn-primary" onclick="downloadUploadExcel()" id="btn-upload-download-excel">⬇ Download Excel</button>
+          <button class="btn btn-primary" onclick="downloadUploadWord()" id="btn-upload-download-word" style="margin-left:8px">⬇ Download AVR Report</button>
+        </div>
+      </div>
+
+      <div class="panel" id="panel-upload-results" style="margin-bottom:16px;display:none">
+        <div class="panel-title">Uploaded data — NIC summary (Gross)</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Class of business</th><th>IBNR</th><th>OCR</th><th>ULAE</th><th>UPR</th><th>DAC</th></tr></thead>
+            <tbody id="upload-nic-gross-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:16px">
         <div class="panel-title">Gross</div>
         <div class="table-wrap">
           <table>
@@ -1117,6 +1158,103 @@ async function downloadNonlifeAvrWord() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ client_id: 'pic', period: 'FY2025' })
     });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.word_download_url.split('/').pop();
+    await downloadFile(d.data.word_download_url, filename);
+  } catch (e) {
+    alert('❌ Download failed: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+// ── Upload-your-own-data reserving flow ─────────────────────────────────────
+// The file input's FileList is kept in this module-level variable (not
+// re-read from the <input> each time) so the Download Excel / Download Word
+// buttons can resubmit the SAME uploaded workbooks after the initial Run
+// Reserving call, without asking the user to pick files twice — the
+// /upload/* endpoints are stateless (accept files, run the engine, delete
+// the temp copies), so every call needs the files resent.
+let uploadedFileList = null;
+
+function onUploadFilesSelected() {
+  uploadedFileList = document.getElementById('upload-files-input').files;
+  document.getElementById('upload-files-info').textContent =
+    uploadedFileList.length ? `${uploadedFileList.length} file(s) selected` : '';
+}
+
+function _buildUploadFormData() {
+  const fd = new FormData();
+  for (const f of uploadedFileList) fd.append('files', f);
+  fd.append('client_name', document.getElementById('upload-client-name').value || 'Uploaded Client');
+  fd.append('valuation_date', document.getElementById('upload-valuation-date').value || 'FY2025');
+  return fd;
+}
+
+async function runUploadReserving() {
+  const statusEl = document.getElementById('upload-status');
+  document.getElementById('upload-results-actions').style.display = 'none';
+  document.getElementById('panel-upload-results').style.display = 'none';
+
+  if (!uploadedFileList || !uploadedFileList.length) {
+    statusEl.innerHTML = '<span style="color:red">Select at least the 4 required .xlsx workbooks first.</span>';
+    return;
+  }
+
+  const btn = document.getElementById('btn-upload-run');
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+
+  try {
+    const r = await apiFetch('/upload/client-data', { method: 'POST', body: _buildUploadFormData() });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const data = d.data;
+
+    let html = '';
+    data.classes.forEach(cls => { html += nicRow(cls, data.by_class[cls].gross); });
+    document.getElementById('upload-nic-gross-body').innerHTML = html;
+    document.getElementById('panel-upload-results').style.display = 'block';
+
+    statusEl.innerHTML = `<span style="color:#2a7">✓ ${data.classes.length} classes loaded — ` +
+      `${data.journal_entries.length} journal entries, debit/credit balanced at ` +
+      `${fmt(data.journal_total_debit)}</span>`;
+    document.getElementById('upload-results-actions').style.display = 'block';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+  }
+
+  btn.innerHTML = '▶ Run Reserving';
+  btn.disabled = false;
+}
+
+async function downloadUploadExcel() {
+  const btn = document.getElementById('btn-upload-download-excel');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Preparing...';
+  btn.disabled = true;
+  try {
+    const r = await apiFetch('/upload/export-excel', { method: 'POST', body: _buildUploadFormData() });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.excel_download_url.split('/').pop();
+    await downloadFile(d.data.excel_download_url, filename);
+  } catch (e) {
+    alert('❌ Download failed: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+async function downloadUploadWord() {
+  const btn = document.getElementById('btn-upload-download-word');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Preparing...';
+  btn.disabled = true;
+  try {
+    const r = await apiFetch('/upload/export-word', { method: 'POST', body: _buildUploadFormData() });
     const d = await r.json();
     if (!d.success) throw new Error(d.detail);
     const filename = d.data.word_download_url.split('/').pop();

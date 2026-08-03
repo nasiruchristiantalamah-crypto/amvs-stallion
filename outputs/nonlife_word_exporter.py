@@ -375,11 +375,11 @@ def _build_definitions_section(doc: Document) -> None:
 
 # ── Appendix I: Claims Data Triangles ───────────────────────────────────────
 
-def _build_appendix_i(doc: Document, client_id: str) -> None:
+def _build_appendix_i(doc: Document, client_id: str, data_folder_override: Optional[str] = None) -> None:
     _add_page_break(doc)
     _add_heading(doc, "Appendix I: Claims Data Triangles")
     for cls in RESERVING_CLASSES:
-        tri = load_triangle(cls, client_id=client_id)
+        tri = load_triangle(cls, client_id=client_id, data_folder_override=data_folder_override)
         gross_tri = tri["gross_triangle"]
         _add_heading(doc, f"{cls} — Gross Cumulative Incurred Claims", level=2)
         origin_years = sorted(gross_tri.keys())
@@ -536,6 +536,8 @@ def generate_nonlife_avr_word_document(
     qualifications:             str            = "Fellow, Institute and Faculty of Actuaries (FIA)",
     narrative:                     Optional[dict] = None,
     output_path:                       Optional[str] = None,
+    data_folder_override:               Optional[str] = None,
+    company_name_override:                Optional[str] = None,
 ) -> str:
     """
     Build the complete non-life NIC AVR Word document, matching PIC's real
@@ -559,11 +561,14 @@ def generate_nonlife_avr_word_document(
     """
     narrative = narrative or {}
     client = load_client(client_id)
+    display_name = company_name_override or client.name
     report_date = datetime.now().strftime("%d %B %Y")
 
-    statements = generate_nonlife_paa_statements_granular(client_id=client_id, period=period, verbose=False)
+    statements = generate_nonlife_paa_statements_granular(
+        client_id=client_id, period=period, data_folder_override=data_folder_override, verbose=False,
+    )
     statements["_client_id"] = client_id
-    paid = load_paid_claims_granular_allocated(client_id=client_id)
+    paid = load_paid_claims_granular_allocated(client_id=client_id, data_folder_override=data_folder_override)
     journal_entries = generate_nonlife_journal(statements, paid, period=period)
 
     doc = Document()
@@ -571,10 +576,10 @@ def generate_nonlife_avr_word_document(
     section.left_margin = Inches(0.9)
     section.right_margin = Inches(0.9)
 
-    _build_cover_page(doc, client.name, period, report_date, appointed_actuary, consulting_firm)
-    _build_executive_summary(doc, client.name, period, statements, {})
-    _build_actuarial_opinion_section(doc, client.name, period, appointed_actuary, consulting_firm)
-    _build_company_overview(doc, client.name, narrative)
+    _build_cover_page(doc, display_name, period, report_date, appointed_actuary, consulting_firm)
+    _build_executive_summary(doc, display_name, period, statements, {})
+    _build_actuarial_opinion_section(doc, display_name, period, appointed_actuary, consulting_firm)
+    _build_company_overview(doc, display_name, narrative)
     _build_materiality_standards(doc, narrative)
     _build_data_section(doc, statements, journal_entries, period)
     _build_expenses_section(doc, statements)
@@ -586,16 +591,16 @@ def generate_nonlife_avr_word_document(
     _build_lrc_section(doc, statements)
     _build_summary_of_results(doc, statements)
     _build_definitions_section(doc)
-    _build_appendix_i(doc, client_id)
+    _build_appendix_i(doc, client_id, data_folder_override)
     _build_appendix_ii(doc, narrative)
     _build_appendix_iii(doc, statements)
     _build_reconciliation_appendix(doc, "Appendix IV: Reconciliation of the Liability for Remaining Coverage & Incurred Claims", statements, journal_entries, "gross")
     _build_reconciliation_appendix(doc, "Appendix V: Reconciliation of the Asset for Remaining Coverage and Incurred Claims", statements, journal_entries, "ri")
-    _build_certificate_pages(doc, client.name, period, appointed_actuary, consulting_firm, qualifications, report_date)
+    _build_certificate_pages(doc, display_name, period, appointed_actuary, consulting_firm, qualifications, report_date)
 
     if output_path is None:
         os.makedirs(GENERATED_DIR, exist_ok=True)
-        client_slug = "".join(c if c.isalnum() else "_" for c in client.name)[:40]
+        client_slug = "".join(c if c.isalnum() else "_" for c in display_name)[:40]
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(GENERATED_DIR, f"AVR_NonLife_{client_slug}_{period}_{timestamp}.docx")
 

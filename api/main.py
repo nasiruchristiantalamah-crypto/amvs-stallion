@@ -9,7 +9,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+import shutil
+import tempfile
+
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -744,6 +747,191 @@ def download_nonlife_word_export(filename: str):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=safe_name,
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  FILE UPLOAD — run the reserving engine against ad-hoc uploaded workbooks
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Railway can't host a client's real Excel workbooks (see _require_data_access
+# above) — this lets a user upload them directly through the dashboard instead
+# of pre-configuring a client_id/data_folder. The engine still needs a
+# *template* to know each workbook's expected filename, sheet names, and
+# column layout (see engine/data_loader.py's module docstring) — "pic" is the
+# only validated non-life workbook shape so far, so uploaded files must be
+# named exactly as clients/pic/assumptions.yaml's data_files expects.
+# client_name / valuation_date from the form are cosmetic report labels only
+# (this doesn't register a new client) — the engine runs as
+# client_id="pic" with its data folder swapped for the upload temp directory
+# (data_folder_override — see engine/data_loader.py's _resolve_client()).
+
+UPLOAD_TEMPLATE_CLIENT_ID = "pic"
+_REQUIRED_UPLOAD_KEYS = ["ibnr_workbook", "raw_data_workbook", "upr_dac_workbook", "ulae_workbook"]
+
+
+def _save_uploaded_files(files: List[UploadFile], temp_dir: str) -> None:
+    for f in files:
+        if not f.filename:
+            continue
+        if not f.filename.lower().endswith(".xlsx"):
+            raise HTTPException(status_code=400, detail=f"'{f.filename}' is not a .xlsx file")
+        dest = os.path.join(temp_dir, os.path.basename(f.filename))
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(f.file, out)
+
+
+def _check_required_uploads(temp_dir: str) -> None:
+    template = load_client(UPLOAD_TEMPLATE_CLIENT_ID)
+    uploaded = {name.lower() for name in os.listdir(temp_dir)}
+    missing = [template.data_files[k] for k in _REQUIRED_UPLOAD_KEYS if template.data_files[k].lower() not in uploaded]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Missing required file(s): " + "; ".join(missing) +
+                " — uploaded files must be named exactly as PIC's own workbook template expects "
+                "(the only validated non-life workbook shape so far)."
+            ),
+        )
+
+
+def _run_uploaded_reserving(temp_dir: str, period: str):
+    """Runs the full 4-class non-life PAA pipeline against uploaded workbooks. Returns (statements, journal_entries)."""
+    statements = generate_nonlife_paa_statements(
+        client_id=UPLOAD_TEMPLATE_CLIENT_ID, period=period, data_folder_override=temp_dir, verbose=False,
+    )
+    paid = load_paid_claims(client_id=UPLOAD_TEMPLATE_CLIENT_ID, data_folder_override=temp_dir)
+    entries = generate_nonlife_journal(statements, paid, period=period)
+    return statements, entries
+
+
+def _journal_entry_to_dict(e) -> dict:
+    return {
+        "date": e.date, "account_code": e.account_code, "account_name": e.account_name,
+        "debit": e.debit, "credit": e.credit, "narrative": e.narrative,
+        "class_of_business": e.class_of_business, "basis": e.basis, "period": e.period,
+    }
+
+
+@protected.post("/upload/client-data")
+async def upload_client_data(
+    files:          List[UploadFile] = File(..., description="PIC-template non-life workbooks (.xlsx)"),
+    client_name:    str              = Form(...),
+    valuation_date: str              = Form("FY2025"),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    temp_dir = tempfile.mkdtemp(prefix="amvs_upload_")
+    try:
+        _save_uploaded_files(files, temp_dir)
+        _check_required_uploads(temp_dir)
+        statements, entries = _run_uploaded_reserving(temp_dir, valuation_date)
+
+        by_class = {
+            cls: {basis: _class_liability_to_dict(statements["by_class"][cls][basis]) for basis in ("gross", "net", "ri")}
+            for cls in statements["classes"]
+        }
+        totals = {basis: _class_liability_to_dict(statements["totals"][basis]) for basis in ("gross", "net", "ri")}
+
+        response_data = {
+            "client_name":          client_name,
+            "period":               statements["period"],
+            "classes":              statements["classes"],
+            "by_class":             by_class,
+            "totals":               totals,
+            "reserving_summary":    statements["reserving_summary"],
+            "journal_entries":      [_journal_entry_to_dict(e) for e in entries],
+            "journal_total_debit":  round(sum(e.debit for e in entries), 2),
+            "journal_total_credit": round(sum(e.credit for e in entries), 2),
+        }
+        _log_valuation_run(
+            db, current_user, "upload_client_data",
+            {"client_name": client_name, "period": valuation_date, "file_count": len(files)},
+            response_data,
+        )
+        return {"success": True, "data": response_data}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@protected.post("/upload/export-excel")
+async def upload_export_excel(
+    files:          List[UploadFile] = File(...),
+    client_name:    str              = Form(...),
+    valuation_date: str              = Form("FY2025"),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    temp_dir = tempfile.mkdtemp(prefix="amvs_upload_")
+    try:
+        _save_uploaded_files(files, temp_dir)
+        _check_required_uploads(temp_dir)
+        statements, entries = _run_uploaded_reserving(temp_dir, valuation_date)
+
+        excel_path = export_nonlife_statements_to_excel(
+            statements, entries,
+            meta={"company_name": client_name, "data_source": f"{client_name} uploaded data — {valuation_date}"},
+        )
+        filename = os.path.basename(excel_path)
+        result = {"excel_download_url": f"/nonlife/statements/download/{filename}"}
+        _log_valuation_run(
+            db, current_user, "upload_export_excel",
+            {"client_name": client_name, "period": valuation_date, "file_count": len(files)},
+            result,
+        )
+        return {"success": True, "data": result}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@protected.post("/upload/export-word")
+async def upload_export_word(
+    files:              List[UploadFile] = File(...),
+    client_name:        str              = Form(...),
+    valuation_date:     str              = Form("FY2025"),
+    appointed_actuary:  str              = Form("Charles Osei-Akoto"),
+    consulting_firm:    str              = Form("Stallion Consultants Ltd"),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    temp_dir = tempfile.mkdtemp(prefix="amvs_upload_")
+    try:
+        _save_uploaded_files(files, temp_dir)
+        _check_required_uploads(temp_dir)
+
+        docx_path = generate_nonlife_avr_word_document(
+            client_id             = UPLOAD_TEMPLATE_CLIENT_ID,
+            period                 = valuation_date,
+            appointed_actuary       = appointed_actuary,
+            consulting_firm           = consulting_firm,
+            data_folder_override         = temp_dir,
+            company_name_override           = client_name,
+        )
+        filename = os.path.basename(docx_path)
+        result = {"word_download_url": f"/export/nonlife-word/download/{filename}"}
+        _log_valuation_run(
+            db, current_user, "upload_export_word",
+            {"client_name": client_name, "period": valuation_date, "file_count": len(files)},
+            result,
+        )
+        return {"success": True, "data": result}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @protected.get("/nic/quarters")

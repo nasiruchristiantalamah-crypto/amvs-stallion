@@ -156,6 +156,7 @@ def generate_nonlife_paa_statements(
     ra_loading:                float           = DEFAULT_RA_LOADING,
     discount_duration_years:  float           = DEFAULT_DISCOUNT_DURATION_YEARS,
     use_discounting:            bool            = True,
+    data_folder_override:       Optional[str]  = None,
     verbose:                      bool            = True,
 ) -> dict:
     """
@@ -188,7 +189,7 @@ def generate_nonlife_paa_statements(
         print(f"  AMVS NON-LIFE PAA STATEMENTS — {period} — client: {client_id}")
         print(f"{'='*60}")
 
-    summary = run_nic_summary(client_id=client_id, verbose=False)
+    summary = run_nic_summary(client_id=client_id, data_folder_override=data_folder_override, verbose=False)
     return _build_statements_from_summary(summary, period, ra_loading, discount_duration_years, use_discounting, verbose)
 
 
@@ -198,6 +199,7 @@ def generate_nonlife_paa_statements_granular(
     ra_loading:                float           = DEFAULT_RA_LOADING,
     discount_duration_years:  float           = DEFAULT_DISCOUNT_DURATION_YEARS,
     use_discounting:            bool            = True,
+    data_folder_override:       Optional[str]  = None,
     verbose:                      bool            = True,
 ) -> dict:
     """
@@ -214,7 +216,7 @@ def generate_nonlife_paa_statements_granular(
         print(f"  AMVS NON-LIFE PAA STATEMENTS (6-class) — {period} — client: {client_id}")
         print(f"{'='*60}")
 
-    summary = run_nic_summary_granular(client_id=client_id, verbose=False)
+    summary = run_nic_summary_granular(client_id=client_id, data_folder_override=data_folder_override, verbose=False)
     return _build_statements_from_summary(summary, period, ra_loading, discount_duration_years, use_discounting, verbose)
 
 

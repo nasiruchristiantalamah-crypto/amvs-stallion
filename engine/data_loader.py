@@ -82,6 +82,8 @@ Structural parsing, not hardcoded row numbers:
 ================================================================================
 """
 
+import os
+from dataclasses import replace
 from typing import Dict, List, Optional, Tuple
 
 import openpyxl
@@ -189,6 +191,22 @@ def _bucket_granular(raw_label: str, ocr_class_mapping: Optional[Dict[str, str]]
 
 # ── Workbook helpers ─────────────────────────────────────────────────────────
 
+def _resolve_client(client_id: str, data_folder_override: Optional[str] = None) -> ClientConfig:
+    """
+    Resolve a client's config, optionally reading its workbooks from a
+    different folder — e.g. a temporary directory of files a user just
+    uploaded through the dashboard (see api/main.py's /upload/* endpoints)
+    — while keeping that client's own data_files naming convention and
+    ocr_class_mapping. The uploaded files must be named exactly as that
+    client's assumptions.yaml data_files expects (PIC's own filenames, if
+    client_id="pic" — the only validated non-life workbook template so far).
+    """
+    client = load_client(client_id)
+    if data_folder_override:
+        client = replace(client, data_folder=data_folder_override)
+    return client
+
+
 def _read_sheet_rows(client: ClientConfig, data_file_key: str, sheet_name: str) -> List[tuple]:
     path = client.data_file_path(data_file_key)
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
@@ -246,15 +264,18 @@ def _find_row_with_col(rows: List[tuple], label: str, mode: str = "exact") -> Tu
 
 # ── 1. Claims triangles + earned/written premium (drives IBNR) ─────────────
 
-def load_triangle(class_of_business: str, client_id: str = "pic") -> Dict[str, Dict[int, float]]:
+def load_triangle(class_of_business: str, client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, Dict[int, float]]:
     """
     Read the cumulative Gross/Net incurred claims triangle and Gross/Net
     earned/written premium for one of the 4 reserving classes from the
     client's IBNR Projection workbook.
 
     Parameters:
-        class_of_business : "Motor", "Fire", "Accident", or "Others"
-        client_id           : which client (clients/<client_id>/assumptions.yaml)
+        class_of_business    : "Motor", "Fire", "Accident", or "Others"
+        client_id              : which client (clients/<client_id>/assumptions.yaml)
+        data_folder_override  : read this client's workbooks from a different
+                                  folder (e.g. an uploaded-files temp dir) — see
+                                  _resolve_client()
 
     Returns:
         {
@@ -268,7 +289,7 @@ def load_triangle(class_of_business: str, client_id: str = "pic") -> Dict[str, D
     if class_of_business not in RESERVING_CLASSES:
         raise ValueError(f"Unknown reserving class '{class_of_business}' — must be one of {RESERVING_CLASSES}")
 
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows = _read_sheet_rows(client, "ibnr_workbook", class_of_business.upper())
 
     gross_triangle, net_triangle = _parse_triangle_table(rows)
@@ -388,7 +409,7 @@ def _parse_premium_table(rows: List[tuple]) -> Tuple[Dict[int, float], Dict[int,
 
 # ── 1b. IBNR / URR split, by class (optional — see docstring) ──────────────
 
-def load_ibnr_urr_split(client_id: str = "pic", basis: str = "gross") -> Dict[str, Dict[str, float]]:
+def load_ibnr_urr_split(client_id: str = "pic", basis: str = "gross", data_folder_override: Optional[str] = None) -> Dict[str, Dict[str, float]]:
     """
     Read the client's own IBNR/URR split, if they produce one — see
     clients/pic/assumptions.yaml's bel_workbook comment for what URR
@@ -416,12 +437,16 @@ def load_ibnr_urr_split(client_id: str = "pic", basis: str = "gross") -> Dict[st
         raise ValueError(f"basis must be 'gross' or 'net', got {basis!r}")
     data_key = "bel_workbook" if basis == "gross" else "bel_net_workbook"
 
-    client = load_client(client_id)
-    if data_key not in client.data_files:
+    client = _resolve_client(client_id, data_folder_override)
+    if data_key not in client.data_files or not os.path.isfile(client.data_file_path(data_key)):
+        # Same fallback whether the key is genuinely unconfigured (a client
+        # that doesn't produce this split at all) or configured-but-missing
+        # on disk (e.g. an upload flow — see api/main.py's /upload/* — that
+        # reuses another client's data_files template but only received the
+        # 4 required workbooks, not this optional refinement).
         raise ValueError(
-            f"Client '{client_id}' has no '{data_key}' configured in assumptions.yaml's "
-            f"data_files — this client doesn't produce an IBNR/URR split; fall back to "
-            f"the combined chain-ladder IBNR+URR figure instead."
+            f"Client '{client_id}' has no '{data_key}' available — this client doesn't "
+            f"produce an IBNR/URR split; fall back to the combined chain-ladder IBNR+URR figure instead."
         )
 
     result: Dict[str, Dict[str, float]] = {}
@@ -438,7 +463,7 @@ def load_ibnr_urr_split(client_id: str = "pic", basis: str = "gross") -> Dict[st
 
 # ── 2. Outstanding claims / OCR (case reserves), by class ──────────────────
 
-def load_ocr(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
+def load_ocr(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, Dict[str, float]]:
     """
     Aggregate the Outstanding Claims register (one row per open claim)
     into Gross/Net OCR totals per reserving bucket.
@@ -458,7 +483,7 @@ def load_ocr(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
     Returns:
         {"Motor": {"gross": float, "net": float}, "Fire": {...}, ...}
     """
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows, class_col, gross_col, net_col, field_header_idx = _parse_ocr_sheet(client)
 
     totals = {c: {"gross": 0.0, "net": 0.0} for c in RESERVING_CLASSES}
@@ -496,7 +521,7 @@ def _parse_ocr_sheet(client: ClientConfig) -> Tuple[List[tuple], int, int, int, 
     return rows, class_col, gross_col, net_col, field_header_idx
 
 
-def load_ocr_granular(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
+def load_ocr_granular(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, Dict[str, float]]:
     """
     Same source data as load_ocr(), aggregated into the 6-class breakdown
     (GRANULAR_CLASSES) PIC's real published reports use, plus an
@@ -507,7 +532,7 @@ def load_ocr_granular(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
     Returns:
         {"Motor": {"gross": float, "net": float}, ..., "Unclassified": {...}}
     """
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows, class_col, gross_col, net_col, field_header_idx = _parse_ocr_sheet(client)
 
     totals = {c: {"gross": 0.0, "net": 0.0} for c in GRANULAR_CLASSES + ["Unclassified"]}
@@ -524,7 +549,7 @@ def load_ocr_granular(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
 
 # ── 3. UPR & DAC, by class ──────────────────────────────────────────────────
 
-def load_upr_dac(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
+def load_upr_dac(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, Dict[str, float]]:
     """
     Read the client's own computed Gross/Net UPR and DAC by class, and
     aggregate into the 4 reserving buckets.
@@ -532,7 +557,7 @@ def load_upr_dac(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
     Returns:
         {"Motor": {"gross_upr":.., "net_upr":.., "gross_dac":.., "net_dac":..}, ...}
     """
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows = _read_sheet_rows(client, "upr_dac_workbook", client.data_files["upr_dac_sheet"])
 
     header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
@@ -563,7 +588,7 @@ def load_upr_dac(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
     return totals
 
 
-def load_upr_dac_granular(client_id: str = "pic") -> Dict[str, Dict[str, float]]:
+def load_upr_dac_granular(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, Dict[str, float]]:
     """
     Same source data as load_upr_dac(), aggregated into the 6-class
     breakdown (GRANULAR_CLASSES). Unlike OCR, PIC's UPR & DAC sheet already
@@ -575,7 +600,7 @@ def load_upr_dac_granular(client_id: str = "pic") -> Dict[str, Dict[str, float]]
     Returns:
         {"Motor": {"gross_upr":.., "net_upr":.., "gross_dac":.., "net_dac":..}, ..., "Unclassified": {...}}
     """
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows = _read_sheet_rows(client, "upr_dac_workbook", client.data_files["upr_dac_sheet"])
 
     header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
@@ -602,7 +627,7 @@ def load_upr_dac_granular(client_id: str = "pic") -> Dict[str, Dict[str, float]]
 
 # ── 4. ULAE, by class ────────────────────────────────────────────────────────
 
-def load_ulae(client_id: str = "pic") -> Dict[str, float]:
+def load_ulae(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, float]:
     """
     Read the client's own computed ULAE (Alpha-ratio method) by class,
     aggregated into the 4 reserving buckets. ULAE is assumed not reinsured
@@ -612,7 +637,7 @@ def load_ulae(client_id: str = "pic") -> Dict[str, float]:
     Returns:
         {"Motor": float, "Fire": float, "Accident": float, "Others": float}
     """
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows = _read_sheet_rows(client, "ulae_workbook", client.data_files["ulae_sheet"])
 
     header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
@@ -633,7 +658,7 @@ def load_ulae(client_id: str = "pic") -> Dict[str, float]:
     return totals
 
 
-def load_ulae_granular(client_id: str = "pic") -> Dict[str, float]:
+def load_ulae_granular(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, float]:
     """
     Same source data as load_ulae(), read at 6-class resolution
     (GRANULAR_CLASSES). NOTE: PIC's ULAE workbook only carries Bonds/
@@ -650,7 +675,7 @@ def load_ulae_granular(client_id: str = "pic") -> Dict[str, float]:
     Returns:
         {"Motor": float, "Fire": float, "Accident": float, "Bonds": 0.0, "Engineering": 0.0, "Marine": 0.0, "Unclassified": float}
     """
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows = _read_sheet_rows(client, "ulae_workbook", client.data_files["ulae_sheet"])
 
     header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
@@ -673,7 +698,7 @@ def load_ulae_granular(client_id: str = "pic") -> Dict[str, float]:
 
 # ── 5. Paid claims, by class (for journal "claims paid" movements) ─────────
 
-def load_paid_claims(client_id: str = "pic") -> Dict[str, float]:
+def load_paid_claims(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, float]:
     """
     Read the "Paid Claims in <year>" column from the same ULAE workbook
     sheet used by load_ulae() — actual cash claims paid during the year,
@@ -683,7 +708,7 @@ def load_paid_claims(client_id: str = "pic") -> Dict[str, float]:
     Returns:
         {"Motor": float, "Fire": float, "Accident": float, "Others": float}
     """
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows = _read_sheet_rows(client, "ulae_workbook", client.data_files["ulae_sheet"])
 
     header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
@@ -704,7 +729,7 @@ def load_paid_claims(client_id: str = "pic") -> Dict[str, float]:
     return totals
 
 
-def load_paid_claims_granular(client_id: str = "pic") -> Dict[str, float]:
+def load_paid_claims_granular(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, float]:
     """
     Same source data as load_paid_claims(), read at 6-class resolution.
     Same caveat as load_ulae_granular(): Bonds/Engineering/Marine come back
@@ -715,7 +740,7 @@ def load_paid_claims_granular(client_id: str = "pic") -> Dict[str, float]:
     Returns:
         {"Motor": float, "Fire": float, "Accident": float, "Bonds": 0.0, "Engineering": 0.0, "Marine": 0.0, "Unclassified": float}
     """
-    client = load_client(client_id)
+    client = _resolve_client(client_id, data_folder_override)
     rows = _read_sheet_rows(client, "ulae_workbook", client.data_files["ulae_sheet"])
 
     header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")

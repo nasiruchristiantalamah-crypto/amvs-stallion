@@ -459,12 +459,17 @@ def run_reserving(
     }
 
 
-def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
+def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] = None, verbose: bool = True) -> dict:
     """
     Build the full non-life NIC summary table — Gross, Net, and RI (ceded)
     IBNR, OCR, ULAE, UPR, and DAC by class of business — for all 4
     reserving classes (Motor, Fire, Accident, Others), for any configured
     client (see clients/<client_id>/client.yaml).
+
+    data_folder_override reads that client's workbooks from a different
+    folder instead — e.g. a temporary directory of files a user just
+    uploaded (see api/main.py's /upload/* endpoints and
+    engine/data_loader.py's _resolve_client()).
 
     Combines:
         - IBNR: run_reserving() (Chain Ladder) fed by data_loader.load_triangle()
@@ -503,13 +508,13 @@ def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
         print(f"  AMVS NIC NON-LIFE SUMMARY — all classes — client: {client_id}")
         print(f"{'='*60}")
 
-    ocr_data     = load_ocr(client_id=client_id)
-    upr_dac_data = load_upr_dac(client_id=client_id)
-    ulae_data    = load_ulae(client_id=client_id)
+    ocr_data     = load_ocr(client_id=client_id, data_folder_override=data_folder_override)
+    upr_dac_data = load_upr_dac(client_id=client_id, data_folder_override=data_folder_override)
+    ulae_data    = load_ulae(client_id=client_id, data_folder_override=data_folder_override)
 
     try:
-        ibnr_urr_gross = load_ibnr_urr_split(client_id=client_id, basis="gross")
-        ibnr_urr_net   = load_ibnr_urr_split(client_id=client_id, basis="net")
+        ibnr_urr_gross = load_ibnr_urr_split(client_id=client_id, basis="gross", data_folder_override=data_folder_override)
+        ibnr_urr_net   = load_ibnr_urr_split(client_id=client_id, basis="net", data_folder_override=data_folder_override)
         if verbose:
             print("  Using client's own pure-IBNR/URR split (URR excluded from LIC).")
     except ValueError:
@@ -519,7 +524,7 @@ def run_nic_summary(client_id: str = "pic", verbose: bool = True) -> dict:
 
     by_class: dict = {}
     for cls in RESERVING_CLASSES:
-        tri = load_triangle(cls, client_id=client_id)
+        tri = load_triangle(cls, client_id=client_id, data_folder_override=data_folder_override)
         reserving = run_reserving(
             class_of_business = cls,
             gross_triangle    = tri["gross_triangle"],
@@ -600,7 +605,7 @@ def _allocate_others(others_total: float, weights: Dict[str, float]) -> Dict[str
     return {cls: others_total * (max(0.0, w) / total_weight) for cls, w in weights.items()}
 
 
-def run_nic_summary_granular(client_id: str = "pic", verbose: bool = True) -> dict:
+def run_nic_summary_granular(client_id: str = "pic", data_folder_override: Optional[str] = None, verbose: bool = True) -> dict:
     """
     Like run_nic_summary(), but broken out into the 6-class breakdown
     (Motor, Fire, Accident, Bonds, Engineering, Marine) PIC's own published
@@ -665,11 +670,11 @@ def run_nic_summary_granular(client_id: str = "pic", verbose: bool = True) -> di
         print(f"  AMVS NIC NON-LIFE SUMMARY (6-class) — client: {client_id}")
         print(f"{'='*60}")
 
-    base = run_nic_summary(client_id=client_id, verbose=False)
-    ocr_g  = load_ocr_granular(client_id=client_id)
-    upr_g  = load_upr_dac_granular(client_id=client_id)
-    ulae_g = load_ulae_granular(client_id=client_id)
-    paid_g = load_paid_claims_granular(client_id=client_id)
+    base = run_nic_summary(client_id=client_id, data_folder_override=data_folder_override, verbose=False)
+    ocr_g  = load_ocr_granular(client_id=client_id, data_folder_override=data_folder_override)
+    upr_g  = load_upr_dac_granular(client_id=client_id, data_folder_override=data_folder_override)
+    ulae_g = load_ulae_granular(client_id=client_id, data_folder_override=data_folder_override)
+    paid_g = load_paid_claims_granular(client_id=client_id, data_folder_override=data_folder_override)
 
     allocable = ("Bonds", "Engineering", "Marine")
     weights = {cls: ocr_g[cls]["gross"] + upr_g[cls]["gross_upr"] for cls in allocable}
@@ -732,7 +737,7 @@ def run_nic_summary_granular(client_id: str = "pic", verbose: bool = True) -> di
     }
 
 
-def load_paid_claims_granular_allocated(client_id: str = "pic") -> Dict[str, float]:
+def load_paid_claims_granular_allocated(client_id: str = "pic", data_folder_override: Optional[str] = None) -> Dict[str, float]:
     """
     Paid claims (data_loader.load_paid_claims_granular()'s counterpart) with
     Bonds/Engineering/Marine filled in via the same OCR+UPR-proportional
@@ -743,11 +748,11 @@ def load_paid_claims_granular_allocated(client_id: str = "pic") -> Dict[str, flo
     """
     from engine.data_loader import load_ocr_granular, load_paid_claims, load_paid_claims_granular, load_upr_dac_granular
 
-    paid_g = load_paid_claims_granular(client_id=client_id)
-    others_total = load_paid_claims(client_id=client_id)["Others"]
+    paid_g = load_paid_claims_granular(client_id=client_id, data_folder_override=data_folder_override)
+    others_total = load_paid_claims(client_id=client_id, data_folder_override=data_folder_override)["Others"]
 
-    ocr_g = load_ocr_granular(client_id=client_id)
-    upr_g = load_upr_dac_granular(client_id=client_id)
+    ocr_g = load_ocr_granular(client_id=client_id, data_folder_override=data_folder_override)
+    upr_g = load_upr_dac_granular(client_id=client_id, data_folder_override=data_folder_override)
     allocable = ("Bonds", "Engineering", "Marine")
     weights = {cls: ocr_g[cls]["gross"] + upr_g[cls]["gross_upr"] for cls in allocable}
     allocated = _allocate_others(others_total, weights)
