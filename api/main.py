@@ -26,6 +26,12 @@ from engine.data_loader import load_paid_claims
 from engine.journals import generate_nonlife_journal
 from engine.clients import list_clients, load_client
 from engine.assumptions_manager import AssumptionSet
+from engine.assumptions import ProductAssumptions, LapseSchedule
+from engine.custom_pricing import (
+    build_custom_product, run_custom_pricing, run_custom_rate_table, run_custom_sensitivity,
+)
+from outputs.custom_pricing_excel_exporter import export_custom_pricing_to_excel, GENERATED_DIR as CUSTOM_PRICING_EXCEL_DIR
+from outputs.custom_pricing_word_exporter import generate_custom_pricing_avr_note, GENERATED_DIR as CUSTOM_PRICING_WORD_DIR
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
 from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
@@ -498,6 +504,199 @@ def rate_table_endpoint(request: RateTableRequest, db: Session = Depends(get_db)
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  CUSTOM PRODUCT PRICING (Part 4) — the dashboard's product builder
+# ══════════════════════════════════════════════════════════════════════════════
+# Prices an ad-hoc product built entirely from the request — no
+# clients/<id>/products/<name>.yaml file needed. See
+# engine/custom_pricing.py's module docstring for exactly which product
+# types this can correctly price and which it deliberately refuses
+# (annuities, non-life classes) rather than silently mispricing.
+
+ANNUITY_PRODUCT_TYPES = {"annuity_immediate", "annuity_deferred"}
+NONLIFE_PRODUCT_TYPES = {
+    "motor_comprehensive", "motor_third_party", "fire", "burglary", "marine_cargo",
+    "engineering", "liability", "travel", "bond", "aviation",
+}
+
+def _check_custom_product_type_supported(product_type: str) -> None:
+    if product_type in ANNUITY_PRODUCT_TYPES:
+        raise HTTPException(status_code=400, detail=(
+            "Annuities aren't supported by the pricing engine yet. Annuity cash flows run in the "
+            "opposite direction from every other product here (premium in, then survival-contingent "
+            "payments out) and need a dedicated engine rather than a bolt-on to the death-benefit "
+            "decrement loop — flagging this rather than pricing it incorrectly."
+        ))
+    if product_type in NONLIFE_PRODUCT_TYPES:
+        raise HTTPException(status_code=400, detail=(
+            "Non-life classes aren't supported by this pricing engine yet. General insurance "
+            "pricing is loss-ratio/exposure based, not mortality-decrement based. AMVS already has "
+            "a real non-life RESERVING engine (chain ladder / Bornhuetter-Ferguson — see "
+            "engine/ifrs17_nonlife.py) but no non-life PRICING engine — flagging this rather than "
+            "pricing it incorrectly."
+        ))
+
+
+class CustomRiderRequest(BaseModel):
+    name:                    str             = Field(...)
+    benefit_type:            str             = Field(..., description="death, tpd, critical_illness, hospital_cash, lump_sum_hospital, income_protection, funeral, maturity, or savings")
+    benefit_amount:          float           = Field(..., ge=0)
+    rider_term_years:        Optional[int]   = Field(None, ge=1, le=100, description="Defaults to the product's own policy term if omitted")
+    waiting_period_months:   int             = Field(0, ge=0)
+
+class CustomDependantRequest(BaseModel):
+    relationship:       str                    = Field(..., description="spouse, parent, child, or sibling")
+    age:                Optional[int]           = Field(None, ge=0, le=110)
+    benefit_overrides:  Dict[str, float]        = Field(default_factory=dict, description="Absolute benefit override per rider name — if a rider isn't listed here, the dependant gets that rider's full main-life benefit")
+
+class CustomProductRequest(BaseModel):
+    product_name:                  str                          = Field("Custom Product")
+    product_type:                  str                           = Field("whole_life")
+    policy_term_years:             Optional[int]                  = Field(None, ge=1, le=100, description="Omit for Whole Life")
+    premium_payment_term_years:    Optional[int]                   = Field(None, ge=1, le=100)
+    premium_mode:                  str                              = Field("monthly")
+    sum_assured:                   float                             = Field(0, ge=0)
+    entry_age:                     int                                = Field(35, ge=0, le=100)
+    gender:                        str                                 = Field("unisex")
+    riders:                        List[CustomRiderRequest]            = Field(default_factory=list)
+    dependants:                    List[CustomDependantRequest]         = Field(default_factory=list)
+    assumptions:                   Optional[dict]                        = Field(None, description="Full AssumptionSet override — defaults to Ghana market defaults if omitted (a custom product has no saved basis of its own)")
+    target_margin:                 Optional[float]                        = Field(None, ge=0, le=0.5)
+
+    @property
+    def riders_or_default(self) -> List[CustomRiderRequest]:
+        if self.riders:
+            return self.riders
+        return [CustomRiderRequest(name="Death Benefit", benefit_type="death", benefit_amount=self.sum_assured)]
+
+
+def _resolve_custom_assumptions(request: "CustomProductRequest") -> ProductAssumptions:
+    assumption_set = AssumptionSet.from_dict(request.assumptions) if request.assumptions else AssumptionSet.ghana_defaults()
+    base = ProductAssumptions(
+        lapse_schedule=LapseSchedule(rates={1: 0.0}),
+        entry_age_main=request.entry_age, gender_main_str=request.gender,
+    )
+    return assumption_set.to_product_assumptions(base=base, entry_age_main=request.entry_age)
+
+
+def _build_product_from_request(request: "CustomProductRequest"):
+    spec = request.model_dump()
+    spec["riders"] = [r.model_dump() for r in request.riders_or_default]
+    return build_custom_product(spec)
+
+
+@protected.post("/pricing/custom")
+def pricing_custom_endpoint(request: CustomProductRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_custom_product_type_supported(request.product_type)
+    if len(request.dependants) > 3:
+        raise HTTPException(status_code=400, detail="A maximum of 3 dependants is supported.")
+    try:
+        product = _build_product_from_request(request)
+        assumptions = _resolve_custom_assumptions(request)
+        result = run_custom_pricing(product, assumptions, target_margin=request.target_margin, verbose=False)
+        _log_valuation_run(db, current_user, "pricing_custom", request.model_dump(), result, client_id=None)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CustomRateTableRequest(CustomProductRequest):
+    age_start: int = Field(18, ge=0, le=100)
+    age_end:   int = Field(70, ge=0, le=100)
+
+@protected.post("/pricing/custom/rate-table")
+def pricing_custom_rate_table_endpoint(request: CustomRateTableRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_custom_product_type_supported(request.product_type)
+    try:
+        product = _build_product_from_request(request)
+        assumptions = _resolve_custom_assumptions(request)
+        table = run_custom_rate_table(product, assumptions, request.age_start, request.age_end, request.target_margin)
+        result = {"rate_table": table, "assumptions_used": assumptions.to_dict(), "product_name": product.name}
+        _log_valuation_run(db, current_user, "pricing_custom_rate_table", request.model_dump(), result, client_id=None)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.post("/pricing/custom/sensitivity")
+def pricing_custom_sensitivity_endpoint(request: CustomProductRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_custom_product_type_supported(request.product_type)
+    try:
+        product = _build_product_from_request(request)
+        assumptions = _resolve_custom_assumptions(request)
+        sensitivity = run_custom_sensitivity(product, assumptions, request.target_margin)
+        result = {"sensitivity": sensitivity, "assumptions_used": assumptions.to_dict(), "product_name": product.name}
+        _log_valuation_run(db, current_user, "pricing_custom_sensitivity", request.model_dump(), result, client_id=None)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.post("/pricing/custom/export-excel")
+def pricing_custom_export_excel_endpoint(request: CustomProductRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_custom_product_type_supported(request.product_type)
+    try:
+        product = _build_product_from_request(request)
+        assumptions = _resolve_custom_assumptions(request)
+        result = run_custom_pricing(product, assumptions, target_margin=request.target_margin, verbose=False)
+        excel_path = export_custom_pricing_to_excel(result, request.model_dump())
+        filename = os.path.basename(excel_path)
+        response = {"excel_download_url": f"/pricing/custom/export-excel/download/{filename}"}
+        _log_valuation_run(db, current_user, "pricing_custom_export_excel", request.model_dump(), response, client_id=None)
+        return {"success": True, "data": response}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/pricing/custom/export-excel/download/{filename}")
+def download_custom_pricing_excel(filename: str):
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(CUSTOM_PRICING_EXCEL_DIR, safe_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
+    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=safe_name)
+
+
+@protected.post("/pricing/custom/export-word")
+def pricing_custom_export_word_endpoint(request: CustomProductRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_custom_product_type_supported(request.product_type)
+    try:
+        product = _build_product_from_request(request)
+        assumptions = _resolve_custom_assumptions(request)
+        result = run_custom_pricing(product, assumptions, target_margin=request.target_margin, verbose=False)
+        docx_path = generate_custom_pricing_avr_note(result, request.model_dump())
+        filename = os.path.basename(docx_path)
+        response = {"word_download_url": f"/pricing/custom/export-word/download/{filename}"}
+        _log_valuation_run(db, current_user, "pricing_custom_export_word", request.model_dump(), response, client_id=None)
+        return {"success": True, "data": response}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/pricing/custom/export-word/download/{filename}")
+def download_custom_pricing_word(filename: str):
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(CUSTOM_PRICING_WORD_DIR, safe_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
+    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=safe_name)
+
 
 @protected.post("/reserving")
 def reserving_endpoint(request: ReservingRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

@@ -135,9 +135,12 @@ def calculate_cash_flows(
                 expected_events += dec.main.dx
                 for i, dependant in enumerate(product.dependants):
                     dep_dec = dec.dependants.get(i)
-                    if dep_dec is None or dependant.benefit_multiplier == 0:
+                    if dep_dec is None:
                         continue
-                    amount += dep_dec.dx * rider.benefit_dependant * benefit_mult * dependant.benefit_multiplier
+                    dep_benefit = dependant.get_dependant_benefit(rider.name, rider.benefit_dependant)
+                    if dep_benefit == 0:
+                        continue
+                    amount += dep_dec.dx * dep_benefit * benefit_mult
                     expected_events += dep_dec.dx
             else:
                 monthly_incidence = rider.annual_incidence_rate / 12
@@ -145,10 +148,13 @@ def calculate_cash_flows(
                 expected_events += lx * monthly_incidence
                 for i, dependant in enumerate(product.dependants):
                     dep_dec = dec.dependants.get(i)
-                    if dep_dec is None or dependant.benefit_multiplier == 0:
+                    if dep_dec is None:
+                        continue
+                    dep_benefit = dependant.get_dependant_benefit(rider.name, rider.benefit_dependant)
+                    if dep_benefit == 0:
                         continue
                     dep_lx = dep_dec.lx
-                    amount += dep_lx * monthly_incidence * rider.benefit_dependant * benefit_mult * dependant.benefit_multiplier * rider.avg_events_per_year
+                    amount += dep_lx * monthly_incidence * dep_benefit * benefit_mult * rider.avg_events_per_year
                     expected_events += dep_lx * monthly_incidence
 
             benefit_lines[rider.name] = amount

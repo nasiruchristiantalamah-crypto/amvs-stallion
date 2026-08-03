@@ -122,13 +122,30 @@ class Dependant:
     age_offset:         int = 0          # applied to the main life's entry age when age is None
     benefit_multiplier: float = 1.0      # scales each rider's benefit_dependant for this dependant
 
+    # Absolute benefit_dependant OVERRIDE for specific riders, keyed by
+    # Rider.name — takes priority over benefit_multiplier entirely for any
+    # rider listed here (e.g. a spouse covered for the full death benefit
+    # but only half the hospital cash rider). Empty (the default) means
+    # every rider uses benefit_multiplier as before — fully backward
+    # compatible with every existing product config.
+    benefit_overrides:  Dict[str, float] = field(default_factory=dict)
+
+    def get_dependant_benefit(self, rider_name: str, rider_benefit_dependant: float) -> float:
+        if rider_name in self.benefit_overrides:
+            return self.benefit_overrides[rider_name]
+        return rider_benefit_dependant * self.benefit_multiplier
+
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Dependant":
+        d = dict(d)
+        if d.get("benefit_overrides"):
+            d["benefit_overrides"] = {str(k): float(v) for k, v in d["benefit_overrides"].items()}
         return cls(**d)
 
     def to_dict(self) -> Dict[str, Any]:
         return dict(relationship=self.relationship, age=self.age,
-                    age_offset=self.age_offset, benefit_multiplier=self.benefit_multiplier)
+                    age_offset=self.age_offset, benefit_multiplier=self.benefit_multiplier,
+                    benefit_overrides=dict(self.benefit_overrides))
 
 
 @dataclass

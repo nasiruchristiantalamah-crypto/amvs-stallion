@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AMVS — Ghana Actuarial Modelling & Valuation System</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f5f5f5; color: #333; font-size: 14px; }
@@ -178,136 +179,214 @@
   <!-- ══ MAIN ══ -->
   <div class="main">
 
-    <!-- ── PRICING PAGE ── -->
+    <!-- ── PRICING PAGE — comprehensive product pricing platform (Part 4) ── -->
     <div class="page active" id="page-pricing">
       <div class="topbar">
-        <div class="page-title">⚡ Actuarial Pricing</div>
-        <span class="badge">Ghana Whole Life & Micro Life</span>
+        <div class="page-title">⚡ Actuarial Pricing Platform</div>
+        <span class="badge-blue">Basis: <span id="pp-basis-badge">Ghana Market Defaults</span></span>
       </div>
 
-      <div class="cards" id="pricing-cards">
-        <div class="card">
-          <div class="card-label">Monthly premium</div>
-          <div class="card-value" id="c-premium">—</div>
-          <div class="card-sub">GHS per policy</div>
-        </div>
-        <div class="card">
-          <div class="card-label">Annual premium</div>
-          <div class="card-value" id="c-annual">—</div>
-          <div class="card-sub">GHS per year</div>
-        </div>
-        <div class="card">
-          <div class="card-label">Profit margin</div>
-          <div class="card-value" id="c-margin">—</div>
-          <div class="card-sub">Target: 15%</div>
-        </div>
-        <div class="card">
-          <div class="card-label">CSM at inception</div>
-          <div class="card-value" id="c-csm">—</div>
-          <div class="card-sub">Unearned profit (GHS)</div>
-        </div>
-      </div>
-
-      <div class="alert alert-danger" id="alert-onerous">
-        ⚠️ Contract is ONEROUS — expected loss must be recognised immediately in P&L under IFRS 17.
-      </div>
-      <div class="alert alert-success" id="alert-ok">
-        ✓ <span id="alert-ok-msg">Pricing complete</span>
-      </div>
-
-      <div class="two-col-wide">
-
-        <!-- Input form -->
-        <div class="panel">
-          <div class="panel-title">📥 Pricing inputs</div>
-          <div class="form-col">
-            <div class="form-group">
-              <label>Entry age (18–70)</label>
-              <input type="number" id="p-age" value="35" min="18" max="70">
-            </div>
-            <div class="form-group">
-              <label>Product tier</label>
-              <select id="p-tier">
-                <option value="1">Tier 1 — Basic (GHS 5,000 death benefit)</option>
-                <option value="2">Tier 2 — Standard (GHS 10,000 death benefit)</option>
-                <option value="3">Tier 3 — Premium (GHS 20,000 death benefit)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Product type</label>
-              <select id="p-product">
-                <option value="whole_life">Ghana Whole Life Insurance (GMM)</option>
-                <option value="micro_life">Ghana Micro Life Insurance (PAA)</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Dependant covered</label>
-              <select id="p-dep">
-                <option value="spouse">Spouse</option>
-                <option value="parent">Parent</option>
-                <option value="child">Child</option>
-                <option value="none">None — main life only</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Mortality loading</label>
-              <select id="p-mort">
-                <option value="-0.20">−20% lighter (standard)</option>
-                <option value="0.00">0% — base table</option>
-                <option value="0.10">+10% heavier</option>
-                <option value="0.25">+25% stress scenario</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Target profit margin</label>
-              <select id="p-margin">
-                <option value="0.15">15% (standard)</option>
-                <option value="0.10">10%</option>
-                <option value="0.20">20%</option>
-                <option value="0.25">25%</option>
-              </select>
-            </div>
-            <button class="btn btn-primary" onclick="runPricing()" id="btn-price">
-              ▶ Run pricing
-            </button>
+      <!-- SECTION 1: Product definition -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">1️⃣ Product definition</div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px">
+          <div class="form-group" style="flex:1;min-width:200px">
+            <label>Product name</label>
+            <input type="text" id="pp-name" value="My Product">
+          </div>
+          <div class="form-group" style="flex:1.4;min-width:260px">
+            <label>Product type</label>
+            <select id="pp-type" onchange="onProductTypeChanged()">
+              <optgroup label="Life Insurance">
+                <option value="whole_life">Whole Life</option>
+                <option value="level_term">Level Term</option>
+                <option value="decreasing_term">Decreasing Term</option>
+                <option value="endowment">Endowment</option>
+                <option value="educational_endowment">Educational Endowment</option>
+                <option value="pure_endowment">Pure Endowment</option>
+                <option value="annuity_immediate">Annuity (Immediate)</option>
+                <option value="annuity_deferred">Annuity (Deferred)</option>
+              </optgroup>
+              <optgroup label="Micro Insurance">
+                <option value="micro_life">Micro Life (Afentoboa-style)</option>
+                <option value="group_life">Group Life</option>
+              </optgroup>
+              <optgroup label="Health Insurance">
+                <option value="hospital_cash">Hospital Cash</option>
+                <option value="medical_expense">Medical Expense</option>
+                <option value="critical_illness">Critical Illness</option>
+                <option value="income_protection">Income Protection</option>
+              </optgroup>
+              <optgroup label="Non-Life Insurance">
+                <option value="motor_comprehensive">Motor Comprehensive</option>
+                <option value="motor_third_party">Motor Third Party</option>
+                <option value="fire">Fire</option>
+                <option value="burglary">Burglary</option>
+                <option value="marine_cargo">Marine Cargo</option>
+                <option value="engineering">Engineering</option>
+                <option value="liability">Liability</option>
+                <option value="travel">Travel</option>
+                <option value="bond">Bond</option>
+                <option value="aviation">Aviation</option>
+              </optgroup>
+            </select>
           </div>
         </div>
 
-        <!-- Results -->
-        <div>
-          <div class="panel">
-            <div class="panel-title">📈 Results</div>
-            <div class="results-grid">
-              <div class="result-block">
-                <div class="result-block-title">Present values (GHS)</div>
-                <div class="result-row"><span class="result-label">PV Premiums</span><span class="result-value" id="r-pvprem">—</span></div>
-                <div class="result-row"><span class="result-label">PV Benefits</span><span class="result-value" id="r-pvben">—</span></div>
-                <div class="result-row"><span class="result-label">PV Expenses</span><span class="result-value" id="r-pvexp">—</span></div>
-                <div class="result-row"><span class="result-label">PV Profits</span><span class="result-value good" id="r-pvprof">—</span></div>
-              </div>
-              <div class="result-block">
-                <div class="result-block-title">IFRS 17 building blocks</div>
-                <div class="result-row"><span class="result-label">PVFCF</span><span class="result-value" id="r-pvfcf">—</span></div>
-                <div class="result-row"><span class="result-label">Risk adjustment</span><span class="result-value" id="r-ra">—</span></div>
-                <div class="result-row"><span class="result-label">CSM at inception</span><span class="result-value good" id="r-csm2">—</span></div>
-                <div class="result-row"><span class="result-label">LRC total</span><span class="result-value" id="r-lrc">—</span></div>
-              </div>
-              <div class="result-block">
-                <div class="result-block-title">Decrement summary</div>
-                <div class="result-row"><span class="result-label">Months projected</span><span class="result-value" id="r-months">—</span></div>
-                <div class="result-row"><span class="result-label">Expected deaths</span><span class="result-value" id="r-deaths">—</span></div>
-                <div class="result-row"><span class="result-label">Year-1 lapse rate</span><span class="result-value" id="r-lapse">—</span></div>
-                <div class="result-row"><span class="result-label">USD premium equiv.</span><span class="result-value" id="r-usd">—</span></div>
-              </div>
-              <div class="result-block">
-                <div class="result-block-title">Onerous contract test</div>
-                <div class="result-row"><span class="result-label">Contract status</span><span class="result-value" id="r-status">—</span></div>
-                <div class="result-row"><span class="result-label">Loss component</span><span class="result-value bad" id="r-loss">—</span></div>
-                <div class="result-row"><span class="result-label">Measurement model</span><span class="result-value" id="r-model">—</span></div>
-                <div class="result-row"><span class="result-label">Calc time</span><span class="result-value" id="r-time">—</span></div>
-              </div>
+        <div id="pp-unsupported-warning" style="display:none;background:#fdecea;color:#a33;padding:10px 14px;border-radius:6px;margin-top:12px;font-size:13px;line-height:1.5"></div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:14px" id="pp-structure-fields">
+          <div class="form-group" style="width:170px">
+            <label>Whole of Life?</label>
+            <div style="padding-top:9px;font-size:13px">
+              <input type="checkbox" id="pp-whole-life" checked onchange="onWholeLifeToggled()"> Yes — runs to max age
             </div>
           </div>
+          <div class="form-group" style="width:140px"><label>Policy term (years)</label><input type="number" id="pp-term" value="20" min="1" max="100" disabled></div>
+          <div class="form-group" style="width:190px"><label>Premium payment term (years)</label><input type="number" id="pp-premium-term" placeholder="= policy term" min="1" max="100"></div>
+          <div class="form-group" style="width:140px">
+            <label>Premium mode</label>
+            <select id="pp-premium-mode"><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option><option value="single">Single</option></select>
+          </div>
+          <div class="form-group" style="width:160px"><label>Sum assured (GHS)</label><input type="number" id="pp-sum-assured" value="5000" min="0"></div>
+          <div class="form-group" style="width:110px"><label>Entry age</label><input type="number" id="pp-entry-age" value="35" min="0" max="100"></div>
+          <div class="form-group" style="width:130px">
+            <label>Gender</label>
+            <select id="pp-gender"><option value="unisex">Unisex</option><option value="male">Male</option><option value="female">Female</option></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 2: Benefit riders -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">2️⃣ Benefit riders</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Rider name</th><th>Benefit type</th><th>Benefit amount (GHS)</th><th>Rider term (years)</th><th>Waiting period (months)</th><th></th></tr></thead>
+            <tbody id="pp-riders-body"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-primary" style="margin-top:10px" onclick="addRiderRow()">+ Add rider</button>
+        <div id="pp-riders-summary" style="margin-top:10px;font-size:13px;color:#666"></div>
+      </div>
+
+      <!-- SECTION 3: Dependants -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-title">3️⃣ Dependants <span style="font-weight:normal;color:#888;font-size:12px">— up to 3</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Relationship</th><th>Age</th><th>Rider benefit overrides (GHS, blank = full benefit)</th><th></th></tr></thead>
+            <tbody id="pp-dependants-body"></tbody>
+          </table>
+        </div>
+        <button class="btn btn-primary" style="margin-top:10px" onclick="addDependantRow()">+ Add dependant</button>
+        <div id="pp-dependant-warning" style="display:none;color:#a33;font-size:13px;margin-top:8px">⚠ Maximum 3 dependants supported.</div>
+      </div>
+
+      <button class="btn btn-gold" onclick="runCustomPricing()" id="pp-btn-run" style="font-size:15px;padding:14px 30px">▶ Run Pricing</button>
+      <span id="pp-run-status" style="font-size:13px;margin-left:12px"></span>
+
+      <!-- SECTION 4: Results -->
+      <div class="panel" id="pp-results-panel" style="display:none;margin-top:20px">
+        <div class="panel-title">📊 Results <span style="font-weight:normal;color:#888;font-size:12px">— basis: <span id="pp-results-basis"></span></span></div>
+        <div class="tab-bar">
+          <div class="tab pp-tab active" data-tab="summary" onclick="showPricingTab('summary',this)">Premium Summary</div>
+          <div class="tab pp-tab" data-tab="cashflow" onclick="showPricingTab('cashflow',this)">Cash Flow</div>
+          <div class="tab pp-tab" data-tab="reserve" onclick="showPricingTab('reserve',this)">Reserve</div>
+          <div class="tab pp-tab" data-tab="profit" onclick="showPricingTab('profit',this)">Profit Signature</div>
+          <div class="tab pp-tab" data-tab="ratetable" onclick="showPricingTab('ratetable',this)">Rate Table</div>
+          <div class="tab pp-tab" data-tab="sensitivity" onclick="showPricingTab('sensitivity',this)">Sensitivity</div>
+        </div>
+
+        <!-- TAB 1: Premium summary -->
+        <div class="tab-content pp-tab-content active" id="pp-tab-summary">
+          <div class="cards" style="margin-bottom:16px">
+            <div class="card"><div class="card-label">Monthly premium</div><div class="card-value" id="pp-c-premium">—</div><div class="card-sub">GHS per policy</div></div>
+            <div class="card"><div class="card-label">Annual premium</div><div class="card-value" id="pp-c-annual">—</div><div class="card-sub">GHS per year</div></div>
+            <div class="card"><div class="card-label">Single premium equiv.</div><div class="card-value" id="pp-c-single">—</div><div class="card-sub">PV of future premiums</div></div>
+            <div class="card"><div class="card-label">Profit margin achieved</div><div class="card-value" id="pp-c-margin">—</div><div class="card-sub">Target basis margin</div></div>
+          </div>
+          <div class="alert alert-danger" id="pp-alert-onerous" style="display:none">⚠️ Contract is ONEROUS — expected loss must be recognised immediately in P&L under IFRS 17.</div>
+          <div class="results-grid">
+            <div class="result-block">
+              <div class="result-block-title">IFRS 17 at inception</div>
+              <div class="result-row"><span class="result-label">PVFCF</span><span class="result-value" id="pp-r-pvfcf">—</span></div>
+              <div class="result-row"><span class="result-label">Risk adjustment</span><span class="result-value" id="pp-r-ra">—</span></div>
+              <div class="result-row"><span class="result-label">CSM at inception</span><span class="result-value good" id="pp-r-csm">—</span></div>
+              <div class="result-row"><span class="result-label">LRC total</span><span class="result-value" id="pp-r-lrc">—</span></div>
+            </div>
+            <div class="result-block">
+              <div class="result-block-title">Present values (GHS)</div>
+              <div class="result-row"><span class="result-label">PV Premiums</span><span class="result-value" id="pp-r-pvprem">—</span></div>
+              <div class="result-row"><span class="result-label">PV Benefits</span><span class="result-value" id="pp-r-pvben">—</span></div>
+              <div class="result-row"><span class="result-label">PV Expenses</span><span class="result-value" id="pp-r-pvexp">—</span></div>
+              <div class="result-row"><span class="result-label">Onerous?</span><span class="result-value" id="pp-r-onerous">—</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: Cash flow projection -->
+        <div class="tab-content pp-tab-content" id="pp-tab-cashflow">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Year</th><th>In-force</th><th>Premium income</th><th>Claims paid</th><th>Expenses</th><th>Commission</th><th>Net cash flow</th><th>Investment income</th><th>Cumulative profit</th></tr></thead>
+              <tbody id="pp-cashflow-body"></tbody>
+            </table>
+          </div>
+          <button class="btn" style="margin-top:10px" onclick="toggleCashflowYears()" id="pp-cashflow-toggle">Show all years</button>
+        </div>
+
+        <!-- TAB 3: Reserve projection -->
+        <div class="tab-content pp-tab-content" id="pp-tab-reserve">
+          <canvas id="pp-reserve-chart" height="90"></canvas>
+          <div class="table-wrap" style="margin-top:16px">
+            <table>
+              <thead><tr><th>Policy year</th><th>Opening reserve</th><th>Premium</th><th>Claims</th><th>Expenses</th><th>Investment income</th><th>Closing reserve</th></tr></thead>
+              <tbody id="pp-reserve-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 4: Profit signature -->
+        <div class="tab-content pp-tab-content" id="pp-tab-profit">
+          <canvas id="pp-profit-chart" height="90"></canvas>
+          <div id="pp-breakeven-note" style="margin:14px 0;font-weight:bold;font-size:14px"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Policy year</th><th>Profit</th><th>Cumulative profit</th></tr></thead>
+              <tbody id="pp-profit-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 5: Rate table -->
+        <div class="tab-content pp-tab-content" id="pp-tab-ratetable">
+          <button class="btn btn-gold" onclick="runCustomRateTable()" id="pp-btn-ratetable">▶ Generate rate table (ages 18–70)</button>
+          <span id="pp-ratetable-status" style="font-size:13px;margin-left:10px"></span>
+          <canvas id="pp-ratetable-chart" height="90" style="margin-top:16px"></canvas>
+          <div class="table-wrap" style="margin-top:16px">
+            <table>
+              <thead><tr><th>Age</th><th>Monthly premium</th><th>Annual premium</th><th>Onerous?</th></tr></thead>
+              <tbody id="pp-ratetable-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 6: Sensitivity analysis -->
+        <div class="tab-content pp-tab-content" id="pp-tab-sensitivity">
+          <button class="btn btn-gold" onclick="runCustomSensitivity()" id="pp-btn-sensitivity">▶ Run sensitivity analysis</button>
+          <span id="pp-sensitivity-status" style="font-size:13px;margin-left:10px"></span>
+          <div class="table-wrap" style="margin-top:16px">
+            <table>
+              <thead><tr><th>Assumption stressed</th><th>Stressed premium</th><th>Difference</th><th>% difference</th></tr></thead>
+              <tbody id="pp-sensitivity-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="margin-top:20px;display:flex;gap:10px">
+          <button class="btn btn-gold" onclick="downloadCustomPricingExcel()" id="pp-btn-download-excel">⬇ Download Excel</button>
+          <button class="btn btn-primary" onclick="generateCustomAVRNote()" id="pp-btn-avr-note">📄 Generate AVR Note</button>
         </div>
       </div>
     </div>
@@ -926,82 +1005,441 @@ function showTab(id, el) {
 }
 
 // ── PRICING ──────────────────────────────────────────────────────────────────
-async function runPricing() {
-  const btn = document.getElementById('btn-price');
-  btn.innerHTML = '<span class="spinner"></span> Running...';
-  btn.disabled = true;
-  document.getElementById('alert-ok').style.display = 'none';
-  document.getElementById('alert-onerous').style.display = 'none';
+// ── PRODUCT PRICING PLATFORM (Part 4) ───────────────────────────────────────
+// Product types the engine can genuinely price (mortality/incidence
+// decrement) vs the two families it deliberately refuses rather than
+// silently mispricing — see engine/custom_pricing.py's module docstring.
+const PP_ANNUITY_TYPES = new Set(['annuity_immediate', 'annuity_deferred']);
+const PP_NONLIFE_TYPES = new Set([
+  'motor_comprehensive', 'motor_third_party', 'fire', 'burglary', 'marine_cargo',
+  'engineering', 'liability', 'travel', 'bond', 'aviation',
+]);
 
-  const body = {
-    entry_age:         parseInt(document.getElementById('p-age').value),
-    tier:              parseInt(document.getElementById('p-tier').value),
-    product:           document.getElementById('p-product').value,
-    dependant:         document.getElementById('p-dep').value,
-    mortality_loading: parseFloat(document.getElementById('p-mort').value),
-    target_margin:     parseFloat(document.getElementById('p-margin').value),
+const PP_BENEFIT_TYPES = [
+  ['death', 'Death'], ['tpd', 'TPD'], ['critical_illness', 'Critical Illness'],
+  ['hospital_cash', 'Hospital Cash per day'], ['lump_sum_hospital', 'Lump Sum Hospital'],
+  ['income_protection', 'Income Protection monthly'], ['funeral', 'Funeral'],
+  ['maturity', 'Maturity Benefit'], ['savings', 'Savings/Investment'],
+];
+
+let ppRiderRowCount = 0;
+let ppDependantRowCount = 0;
+let ppLastResult = null;
+let ppShowAllCashflowYears = false;
+let ppReserveChart = null, ppProfitChart = null, ppRateTableChart = null;
+
+function onProductTypeChanged() {
+  const type = document.getElementById('pp-type').value;
+  const warningEl = document.getElementById('pp-unsupported-warning');
+  if (PP_ANNUITY_TYPES.has(type)) {
+    warningEl.style.display = 'block';
+    warningEl.innerHTML = '⚠️ <strong>Annuities aren\'t supported by the pricing engine yet.</strong> ' +
+      'Annuity cash flows run in the opposite direction from every other product here (premium in, ' +
+      'then survival-contingent payments out) and need a dedicated engine.';
+  } else if (PP_NONLIFE_TYPES.has(type)) {
+    warningEl.style.display = 'block';
+    warningEl.innerHTML = '⚠️ <strong>Non-life classes aren\'t supported by this pricing engine yet.</strong> ' +
+      'General insurance pricing is loss-ratio/exposure based, not mortality-decrement based. AMVS has a ' +
+      'separate non-life RESERVING engine (see the Reserving page) but no non-life PRICING engine.';
+  } else {
+    warningEl.style.display = 'none';
+  }
+
+  // Whole Life is the only product_type with no term at all — every other
+  // type needs a policy term, so force the checkbox off and enable the field.
+  const wholeLifeCheckbox = document.getElementById('pp-whole-life');
+  if (type !== 'whole_life' && wholeLifeCheckbox.checked) {
+    wholeLifeCheckbox.checked = false;
+    onWholeLifeToggled();
+  }
+}
+
+function onWholeLifeToggled() {
+  const isWholeLife = document.getElementById('pp-whole-life').checked;
+  document.getElementById('pp-term').disabled = isWholeLife;
+  if (isWholeLife) document.getElementById('pp-type').value = 'whole_life';
+}
+
+function _riderRowHtml(rowId) {
+  const options = PP_BENEFIT_TYPES.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+  return `<tr data-row-id="${rowId}">
+    <td><input type="text" class="pp-rider-name" value="Rider ${rowId}" style="width:140px"></td>
+    <td><select class="pp-rider-type" style="width:170px" onchange="onRiderTypeChanged(${rowId})">${options}</select></td>
+    <td><input type="number" class="pp-rider-amount" value="5000" min="0" style="width:110px"></td>
+    <td><input type="number" class="pp-rider-term" placeholder="= policy term" min="1" style="width:110px"></td>
+    <td><input type="number" class="pp-rider-waiting" value="0" min="0" style="width:90px"></td>
+    <td><button class="btn" onclick="removeRiderRow(${rowId})" title="Remove this rider">✕</button></td>
+  </tr>`;
+}
+
+function addRiderRow() {
+  ppRiderRowCount += 1;
+  document.getElementById('pp-riders-body').insertAdjacentHTML('beforeend', _riderRowHtml(ppRiderRowCount));
+  renderRiderSummary();
+  renderDependantOverrideColumns();
+}
+
+function removeRiderRow(rowId) {
+  document.querySelector(`#pp-riders-body tr[data-row-id="${rowId}"]`)?.remove();
+  renderRiderSummary();
+  renderDependantOverrideColumns();
+}
+
+function onRiderTypeChanged(rowId) {
+  renderRiderSummary();
+  renderDependantOverrideColumns();
+}
+
+function collectRiders() {
+  const rows = document.querySelectorAll('#pp-riders-body tr');
+  const riders = [];
+  rows.forEach(row => {
+    const name = row.querySelector('.pp-rider-name').value.trim();
+    if (!name) return;
+    const termVal = row.querySelector('.pp-rider-term').value;
+    riders.push({
+      name,
+      benefit_type: row.querySelector('.pp-rider-type').value,
+      benefit_amount: parseFloat(row.querySelector('.pp-rider-amount').value) || 0,
+      rider_term_years: termVal ? parseInt(termVal) : null,
+      waiting_period_months: parseInt(row.querySelector('.pp-rider-waiting').value) || 0,
+    });
+  });
+  return riders;
+}
+
+function renderRiderSummary() {
+  const riders = collectRiders();
+  const el = document.getElementById('pp-riders-summary');
+  if (!riders.length) { el.textContent = 'No riders added yet — a default Death Benefit rider (sum assured) is used if none are added.'; return; }
+  el.textContent = riders.map(r => `${r.name} (${r.benefit_type}): GHS ${r.benefit_amount}`).join('  •  ');
+}
+
+function _dependantRowHtml(rowId) {
+  return `<tr data-row-id="${rowId}">
+    <td><select class="pp-dep-relationship" style="width:120px">
+      <option value="spouse">Spouse</option><option value="parent">Parent</option>
+      <option value="child">Child</option><option value="sibling">Sibling</option>
+    </select></td>
+    <td><input type="number" class="pp-dep-age" value="30" min="0" max="110" style="width:90px"></td>
+    <td class="pp-dep-overrides-cell"></td>
+    <td><button class="btn" onclick="removeDependantRow(${rowId})" title="Remove this dependant">✕</button></td>
+  </tr>`;
+}
+
+function addDependantRow() {
+  const currentCount = document.querySelectorAll('#pp-dependants-body tr').length;
+  const warningEl = document.getElementById('pp-dependant-warning');
+  if (currentCount >= 3) { warningEl.style.display = 'block'; return; }
+  warningEl.style.display = 'none';
+  ppDependantRowCount += 1;
+  document.getElementById('pp-dependants-body').insertAdjacentHTML('beforeend', _dependantRowHtml(ppDependantRowCount));
+  renderDependantOverrideColumns();
+}
+
+function removeDependantRow(rowId) {
+  document.querySelector(`#pp-dependants-body tr[data-row-id="${rowId}"]`)?.remove();
+  document.getElementById('pp-dependant-warning').style.display = 'none';
+}
+
+// Each dependant row gets one benefit-override number input PER current
+// rider, rebuilt whenever riders are added/removed/renamed so the columns
+// always match "for each rider a benefit amount override" from the spec.
+function renderDependantOverrideColumns() {
+  const riders = collectRiders();
+  document.querySelectorAll('#pp-dependants-body tr').forEach(row => {
+    const cell = row.querySelector('.pp-dep-overrides-cell');
+    const existing = {};
+    cell.querySelectorAll('input').forEach(inp => { existing[inp.dataset.riderName] = inp.value; });
+    cell.innerHTML = riders.map(r => `
+      <span style="display:inline-block;margin-right:10px">
+        <label style="font-size:11px;color:#888;display:block">${_escapeHtml(r.name)}</label>
+        <input type="number" class="pp-dep-override" data-rider-name="${_escapeHtml(r.name)}" placeholder="full" value="${existing[r.name] || ''}" style="width:80px">
+      </span>`).join('') || '<span style="color:#aaa;font-size:12px">No riders yet</span>';
+  });
+}
+
+function collectDependants() {
+  const rows = document.querySelectorAll('#pp-dependants-body tr');
+  const dependants = [];
+  rows.forEach(row => {
+    const overrides = {};
+    row.querySelectorAll('.pp-dep-override').forEach(inp => {
+      if (inp.value !== '') overrides[inp.dataset.riderName] = parseFloat(inp.value);
+    });
+    dependants.push({
+      relationship: row.querySelector('.pp-dep-relationship').value,
+      age: parseInt(row.querySelector('.pp-dep-age').value) || null,
+      benefit_overrides: overrides,
+    });
+  });
+  return dependants;
+}
+
+function collectCustomProductRequest() {
+  const isWholeLife = document.getElementById('pp-whole-life').checked;
+  const termVal = document.getElementById('pp-premium-term').value;
+  const req = {
+    product_name: document.getElementById('pp-name').value || 'Custom Product',
+    product_type: document.getElementById('pp-type').value,
+    policy_term_years: isWholeLife ? null : (parseInt(document.getElementById('pp-term').value) || null),
+    premium_payment_term_years: termVal ? parseInt(termVal) : null,
+    premium_mode: document.getElementById('pp-premium-mode').value,
+    sum_assured: parseFloat(document.getElementById('pp-sum-assured').value) || 0,
+    entry_age: parseInt(document.getElementById('pp-entry-age').value) || 35,
+    gender: document.getElementById('pp-gender').value,
+    riders: collectRiders(),
+    dependants: collectDependants(),
   };
+  if (typeof assumptionsPageInitialized !== 'undefined' && assumptionsPageInitialized) {
+    req.assumptions = getCurrentAssumptionsPayload();
+  }
+  return req;
+}
+
+async function runCustomPricing() {
+  const btn = document.getElementById('pp-btn-run');
+  const statusEl = document.getElementById('pp-run-status');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
+  btn.disabled = true;
+  statusEl.textContent = '';
 
   try {
-    const r = await apiFetch('/pricing', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+    const body = collectCustomProductRequest();
+    const r = await apiFetch('/pricing/custom', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     const d = await r.json();
     if (!d.success) throw new Error(d.detail);
-    const data = d.data;
-    const dec = data.decrement_summary;
-
-    // Top cards
-    document.getElementById('c-premium').textContent = 'GHS ' + fmt(data.monthly_premium);
-    document.getElementById('c-annual').textContent  = 'GHS ' + fmt(data.annual_premium);
-    document.getElementById('c-margin').textContent  = pct(data.profit_margin);
-    document.getElementById('c-csm').textContent     = 'GHS ' + fmt(data.csm_at_inception);
-
-    // PV results
-    document.getElementById('r-pvprem').textContent = 'GHS ' + fmt(data.pv_premiums);
-    document.getElementById('r-pvben').textContent  = 'GHS ' + fmt(data.pv_benefits);
-    document.getElementById('r-pvexp').textContent  = 'GHS ' + fmt(data.pv_expenses);
-    document.getElementById('r-pvprof').textContent = 'GHS ' + fmt(data.pv_profits);
-
-    // IFRS 17 building blocks
-    document.getElementById('r-pvfcf').textContent = 'GHS ' + fmt(data.pvfcf);
-    document.getElementById('r-ra').textContent    = 'GHS ' + fmt(data.risk_adjustment);
-    document.getElementById('r-csm2').textContent  = 'GHS ' + fmt(data.csm_at_inception);
-    document.getElementById('r-lrc').textContent   = 'GHS ' + fmt(data.lrc_total);
-
-    // Decrement
-    document.getElementById('r-months').textContent = dec.total_months;
-    document.getElementById('r-deaths').textContent = dec.total_deaths_main.toFixed(4);
-    document.getElementById('r-lapse').textContent  = pct(dec.first_year_lapse);
-    document.getElementById('r-usd').textContent    = 'USD ' + data.monthly_premium_usd;
-
-    // Onerous test
-    const statusEl = document.getElementById('r-status');
-    statusEl.textContent  = data.is_onerous ? 'ONEROUS ⚠️' : 'Not onerous ✓';
-    statusEl.className    = 'result-value ' + (data.is_onerous ? 'bad' : 'good');
-    document.getElementById('r-loss').textContent  = 'GHS ' + fmt(data.loss_component);
-    document.getElementById('r-model').textContent = body.product === 'micro_life' ? 'PAA' : 'GMM';
-    document.getElementById('r-time').textContent  = data.elapsed_seconds + 's';
-
-    // Alert
-    if (data.is_onerous) {
-      document.getElementById('alert-onerous').style.display = 'flex';
-    } else {
-      document.getElementById('alert-ok').style.display = 'flex';
-      document.getElementById('alert-ok-msg').textContent =
-        `Pricing complete — Age ${body.entry_age}, Tier ${body.tier} | ` +
-        `GHS ${fmt(data.monthly_premium)}/month at ${pct(data.profit_margin)} profit margin`;
-    }
-
+    ppLastResult = d.data;
+    renderPricingSummaryTab(d.data);
+    renderCashflowTab(d.data);
+    renderReserveTab(d.data);
+    renderProfitSignatureTab(d.data);
+    document.getElementById('pp-results-basis').textContent = d.data.assumptions_used.name || 'Ghana Market Defaults';
+    document.getElementById('pp-basis-badge').textContent = d.data.assumptions_used.name || 'Ghana Market Defaults';
+    document.getElementById('pp-results-panel').style.display = 'block';
+    statusEl.innerHTML = '<span style="color:#2a7">✓ Pricing complete</span>';
   } catch (e) {
-    alert('❌ Error: ' + e.message + '\n\nMake sure your API is running in VS Code:\ncd amvs\npython -m uvicorn api.main:app --reload --port 8000');
+    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
   }
-
-  btn.innerHTML = '▶ Run pricing';
+  btn.innerHTML = original;
   btn.disabled = false;
 }
+
+function showPricingTab(id, el) {
+  document.querySelectorAll('.pp-tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.pp-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('pp-tab-' + id).classList.add('active');
+  el.classList.add('active');
+}
+
+function renderPricingSummaryTab(data) {
+  document.getElementById('pp-c-premium').textContent = 'GHS ' + fmt(data.monthly_premium);
+  document.getElementById('pp-c-annual').textContent  = 'GHS ' + fmt(data.annual_premium);
+  document.getElementById('pp-c-single').textContent  = 'GHS ' + fmt(data.single_premium_equiv);
+  document.getElementById('pp-c-margin').textContent  = pct(data.profit_margin);
+
+  document.getElementById('pp-r-pvfcf').textContent = 'GHS ' + fmt(data.pvfcf);
+  document.getElementById('pp-r-ra').textContent    = 'GHS ' + fmt(data.risk_adjustment);
+  document.getElementById('pp-r-csm').textContent   = 'GHS ' + fmt(data.csm_at_inception);
+  document.getElementById('pp-r-lrc').textContent   = 'GHS ' + fmt(data.lrc_total);
+
+  document.getElementById('pp-r-pvprem').textContent = 'GHS ' + fmt(data.pv_premiums);
+  document.getElementById('pp-r-pvben').textContent  = 'GHS ' + fmt(data.pv_benefits);
+  document.getElementById('pp-r-pvexp').textContent  = 'GHS ' + fmt(data.pv_expenses);
+  document.getElementById('pp-r-onerous').textContent = data.is_onerous ? 'ONEROUS ⚠️' : 'Not onerous ✓';
+  document.getElementById('pp-r-onerous').className = 'result-value ' + (data.is_onerous ? 'bad' : 'good');
+
+  document.getElementById('pp-alert-onerous').style.display = data.is_onerous ? 'block' : 'none';
+}
+
+function renderCashflowTab(data) {
+  ppShowAllCashflowYears = false;
+  document.getElementById('pp-cashflow-toggle').textContent = 'Show all years';
+  renderCashflowRows(data.annual_cashflow);
+}
+
+function renderCashflowRows(rows) {
+  const shown = ppShowAllCashflowYears ? rows : rows.slice(0, 10);
+  document.getElementById('pp-cashflow-body').innerHTML = shown.map(r => `
+    <tr>
+      <td>${r.policy_year}</td>
+      <td>${r.opening_lives.toFixed(4)}</td>
+      <td>${fmt(r.premium_income)}</td>
+      <td>${fmt(r.total_claims)}</td>
+      <td>${fmt(r.expenses)}</td>
+      <td>${fmt(r.commission)}</td>
+      <td>${fmt(r.net_cash_flow)}</td>
+      <td>${fmt(r.investment_income)}</td>
+      <td>${fmt(r.cumulative_profit)}</td>
+    </tr>`).join('');
+}
+
+function toggleCashflowYears() {
+  ppShowAllCashflowYears = !ppShowAllCashflowYears;
+  document.getElementById('pp-cashflow-toggle').textContent = ppShowAllCashflowYears ? 'Show first 10 years' : 'Show all years';
+  renderCashflowRows(ppLastResult.annual_cashflow);
+}
+
+function renderReserveTab(data) {
+  const rows = data.reserve_projection;
+  document.getElementById('pp-reserve-body').innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.policy_year}</td><td>${fmt(r.opening_reserve)}</td><td>${fmt(r.premium)}</td>
+      <td>${fmt(r.claims)}</td><td>${fmt(r.expenses)}</td><td>${fmt(r.investment_income)}</td>
+      <td>${fmt(r.closing_reserve)}</td>
+    </tr>`).join('');
+
+  if (ppReserveChart) ppReserveChart.destroy();
+  ppReserveChart = new Chart(document.getElementById('pp-reserve-chart'), {
+    type: 'line',
+    data: {
+      labels: rows.map(r => 'Yr ' + r.policy_year),
+      datasets: [{ label: 'Closing reserve (GHS)', data: rows.map(r => r.closing_reserve), borderColor: '#2E5090', backgroundColor: 'rgba(46,80,144,0.1)', fill: true, tension: 0.2 }],
+    },
+    options: { responsive: true, plugins: { legend: { display: true } } },
+  });
+}
+
+function renderProfitSignatureTab(data) {
+  const rows = data.profit_signature.profit_by_year;
+  const breakeven = data.profit_signature.breakeven_year;
+
+  document.getElementById('pp-breakeven-note').innerHTML = breakeven
+    ? `✓ Breakeven achieved in policy year <span style="color:#2a7">${breakeven}</span>`
+    : '⚠ Breakeven not reached within the projection';
+
+  document.getElementById('pp-profit-body').innerHTML = rows.map(r => `
+    <tr style="${r.policy_year === breakeven ? 'background:#eaf7ee' : ''}">
+      <td>${r.policy_year}</td><td>${fmt(r.profit)}</td><td>${fmt(r.cumulative_profit)}</td>
+    </tr>`).join('');
+
+  if (ppProfitChart) ppProfitChart.destroy();
+  ppProfitChart = new Chart(document.getElementById('pp-profit-chart'), {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => 'Yr ' + r.policy_year),
+      datasets: [{ label: 'Profit emerging (GHS)', data: rows.map(r => r.profit), backgroundColor: rows.map(r => r.profit >= 0 ? '#2a7' : '#c33') }],
+    },
+    options: { responsive: true, plugins: { legend: { display: true } } },
+  });
+}
+
+async function runCustomRateTable() {
+  const btn = document.getElementById('pp-btn-ratetable');
+  const statusEl = document.getElementById('pp-ratetable-status');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Generating...';
+  btn.disabled = true;
+  try {
+    const body = { ...collectCustomProductRequest(), age_start: 18, age_end: 70 };
+    const r = await apiFetch('/pricing/custom/rate-table', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const table = d.data.rate_table;
+    const ages = Object.keys(table).map(Number).sort((a, b) => a - b);
+
+    document.getElementById('pp-ratetable-body').innerHTML = ages.map(age => {
+      const row = table[age];
+      if (row.error) return `<tr><td>${age}</td><td colspan="3" style="color:red">${row.error}</td></tr>`;
+      return `<tr><td>${age}</td><td>${fmt(row.monthly_premium)}</td><td>${fmt(row.annual_premium)}</td><td>${row.is_onerous ? 'Yes' : 'No'}</td></tr>`;
+    }).join('');
+
+    if (ppRateTableChart) ppRateTableChart.destroy();
+    ppRateTableChart = new Chart(document.getElementById('pp-ratetable-chart'), {
+      type: 'line',
+      data: {
+        labels: ages.map(a => a.toString()),
+        datasets: [{ label: 'Monthly premium (GHS)', data: ages.map(a => table[a].monthly_premium || null), borderColor: '#C9A84C', backgroundColor: 'rgba(201,168,76,0.1)', fill: true, tension: 0.2 }],
+      },
+      options: { responsive: true, plugins: { legend: { display: true } } },
+    });
+    statusEl.innerHTML = '<span style="color:#2a7">✓ Rate table generated</span>';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+async function runCustomSensitivity() {
+  const btn = document.getElementById('pp-btn-sensitivity');
+  const statusEl = document.getElementById('pp-sensitivity-status');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
+  btn.disabled = true;
+  try {
+    const body = collectCustomProductRequest();
+    const r = await apiFetch('/pricing/custom/sensitivity', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    document.getElementById('pp-sensitivity-body').innerHTML = d.data.sensitivity.map(row => {
+      if (row.error) return `<tr><td>${_escapeHtml(row.assumption_stressed)}</td><td colspan="3" style="color:red">${_escapeHtml(row.error)}</td></tr>`;
+      return `<tr>
+        <td>${_escapeHtml(row.assumption_stressed)}</td>
+        <td>${fmt(row.stressed_premium)}</td>
+        <td style="color:${row.difference > 0 ? '#c33' : (row.difference < 0 ? '#2a7' : '#888')}">${row.difference >= 0 ? '+' : ''}${fmt(row.difference)}</td>
+        <td>${(row.pct_difference * 100).toFixed(2)}%</td>
+      </tr>`;
+    }).join('');
+    statusEl.innerHTML = '<span style="color:#2a7">✓ Sensitivity analysis complete</span>';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+async function downloadCustomPricingExcel() {
+  const btn = document.getElementById('pp-btn-download-excel');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Preparing...';
+  btn.disabled = true;
+  try {
+    const body = collectCustomProductRequest();
+    const r = await apiFetch('/pricing/custom/export-excel', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.excel_download_url.split('/').pop();
+    await downloadFile(d.data.excel_download_url, filename);
+  } catch (e) {
+    alert('❌ Download failed: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+async function generateCustomAVRNote() {
+  const btn = document.getElementById('pp-btn-avr-note');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Generating...';
+  btn.disabled = true;
+  try {
+    const body = collectCustomProductRequest();
+    const r = await apiFetch('/pricing/custom/export-word', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.word_download_url.split('/').pop();
+    await downloadFile(d.data.word_download_url, filename);
+  } catch (e) {
+    alert('❌ Download failed: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+// Seed the builder with one rider row and one dependant row on first load.
+addRiderRow();
 
 // ── IFRS 17 ──────────────────────────────────────────────────────────────────
 let lastIFRS17Request = null;   // reused by downloadIFRS17Excel() so the Excel matches what's on screen
