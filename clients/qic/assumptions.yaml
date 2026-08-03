@@ -35,10 +35,12 @@
 #     real actuaries' full IFRS17 discounted BEL/RA methodology for this
 #     client — different data vintage and/or actuarial judgement in the
 #     real report that this automated pipeline doesn't replicate.
-# Not investigated yet: whether the real AVR was built from a cleaner/
-# reviewed data cut than the workbooks configured below (this client's
-# folder also has a "DATA REVIEWED" tree with a much smaller Outstanding
-# Claims file — not the one referenced here).
+# DATA SOURCE CONFIRMED 2026-08-03: the workbooks configured below (the
+# 5.7MB "2025 QIC Final Data.xlsx", not the smaller "DATA REVIEWED" file
+# set) are the ones actually used for the real Zamara valuation — see
+# data_file_used below. The Accident and Motor gaps above are therefore
+# NOT a data-vintage mismatch; see the root causes already documented
+# (chain-ladder instability for Motor, case-reserve judgement for Accident).
 #
 # UPDATE 2026-08-03 — Motor and Fire switched to Bornhuetter-Ferguson (see
 # reserving_methods below). Both are driven by the same root cause: chain
@@ -85,8 +87,8 @@
 # adjusted_gross_ibnr/adjusted_net_ibnr — never by silently changing this
 # file or the engine's own computed figure.
 #
-# DATA PROVENANCE — also flagged, also not resolved: see
-# data_provenance_warning / data_file_used below.
+# DATA PROVENANCE — CONFIRMED 2026-08-03, no longer flagged: see
+# data_file_used below.
 #
 # The actual data FOLDER path is environment-specific and lives outside
 # git — see clients/qic/client.yaml (gitignored, local dev only) and the
@@ -123,20 +125,24 @@ class_warnings:
 
 # Which raw_data_workbook file this client's non-life output is actually
 # computed from (mirrors data_files.raw_data_workbook above — kept as its
-# own field so it can be shown alongside data_provenance_warning without
-# the dashboard needing to know which data_files key is "the risky one").
-data_file_used: "2025 QIC Final Data.xlsx"
-# NOT YET CONFIRMED: whether this is the same data cut Zamara Actuaries
-# used for the real, audited "2025 QIC Actuarial Valuation Report - Final"
-# (May 2026). This client's own folder structure also has a separate "DATA
-# REVIEWED" tree (e.g. 2025 Outstanding Data Reviewed.xlsx) that is
-# materially smaller than the file configured above — it is unconfirmed
-# whether that reviewed/cleaned data set, this one, or some later
-# combination of both is what actually fed the real valuation. This
-# ambiguity is a plausible contributor to the Accident and Motor gaps
-# documented above. Confirm with QIC or Zamara before treating this
-# client's non-life output as reconciled or submission-ready.
-data_provenance_warning: "QIC non-life data source not yet confirmed against Zamara's valuation data — see data_file_used and the comment above it."
+# own field so it can be shown on the dashboard without the dashboard
+# needing to know which data_files key is "the one that matters"). This is
+# documentation only — NOT read by engine/clients.py/data_loader.py for
+# actually locating the file; the real load path is data_folder (from
+# client.yaml / QIC_DATA_DIR) + data_files.raw_data_workbook above. Kept as
+# a full local path here (rather than just the filename) per the
+# confirmation below, but note this exact path is specific to the machine
+# it was confirmed on — it will not resolve on Railway or another dev's
+# machine, which is fine since nothing loads through this field.
+data_file_used: "C:\\Users\\Christian\\OneDrive - Stallion Consultants Ltd\\Data_Nasiru\\Clients\\Quality Life. QIC\\REPORTS\\IFRS 17 Valuation Run\\2025 QIC Final Data.xlsx"
+# CONFIRMED 2026-08-03: this (the 5.7MB "Final Data" file, not the smaller
+# "DATA REVIEWED" file set) is the data source consistent with Zamara
+# Actuaries' real 2025 QIC valuation. data_provenance_warning removed
+# accordingly — the dashboard Reserving page no longer shows a data-source
+# warning banner for this client. If this ever needs re-flagging (e.g. a
+# newer data cut supersedes this one), re-add a data_provenance_warning:
+# key here — engine/runner.py's run_nic_summary() and the dashboard both
+# already support it generically, nothing else needs to change.
 
 reinsurance:
   treaty_type: "quota_share"
