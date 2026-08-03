@@ -595,7 +595,8 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
         net_dac    = upr_dac_data[cls]["net_dac"]
 
         by_class[cls] = {
-            "method": method,
+            "method":  method,
+            "warning": client.class_warnings.get(cls),
             "gross": {
                 "ibnr": round(gross_ibnr, 2), "ocr": round(gross_ocr, 2),
                 "ulae": round(gross_ulae, 2), "upr":  round(gross_upr, 2),
@@ -630,11 +631,13 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
         print(f"{'='*60}\n")
 
     return {
-        "run_type":        "nic_summary",
-        "classes":         RESERVING_CLASSES,
-        "by_class":        by_class,
-        "totals":          totals,
-        "elapsed_seconds": round(elapsed, 2),
+        "run_type":                "nic_summary",
+        "classes":                 RESERVING_CLASSES,
+        "by_class":                by_class,
+        "totals":                  totals,
+        "elapsed_seconds":         round(elapsed, 2),
+        "data_provenance_warning": client.data_provenance_warning,
+        "data_file_used":          client.data_file_used,
     }
 
 

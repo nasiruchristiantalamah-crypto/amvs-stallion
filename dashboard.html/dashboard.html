@@ -84,6 +84,7 @@
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
   .badge { background: #E7F0E9; color: #2C5233; font-size: 10.5px; padding: 3px 9px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
   .badge-blue { background: #E1E7F3; color: #1F3864; font-size: 10.5px; padding: 3px 9px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
+  .badge-warning { background: #FBF2DC; color: #6B5313; border: 1px solid #8A6D1D; font-size: 10.5px; padding: 2px 8px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
 
   /* ── Metric cards ── */
   .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
@@ -137,6 +138,7 @@
   .alert-success { background: #E7F0E9; border: 1px solid #2C5233; color: #2C5233; }
   .alert-danger  { background: #FCE8E6; border: 1px solid #c62828; color: #c62828; }
   .alert-info    { background: #E1E7F3; border: 1px solid #1F3864; color: #1F3864; }
+  .alert-warning { background: #FBF2DC; border: 1px solid #8A6D1D; color: #6B5313; }
 
   /* ── Tabs ── */
   .tab-bar { display: flex; gap: 0; margin-bottom: 14px; border-bottom: 1px solid #e3e5e9; }
@@ -751,22 +753,31 @@
       <div class="topbar">
         <div>
           <div class="page-title">Reserving</div>
-          <div class="page-subtitle">Chain ladder and Bornhuetter-Ferguson IBNR, by class of business — run on PIC's own data or an uploaded portfolio.</div>
+          <div class="page-subtitle">Chain ladder and Bornhuetter-Ferguson IBNR, by class of business — run on a configured client's own data or an uploaded portfolio.</div>
         </div>
-        <span class="badge">Provident Insurance (PIC) — Motor / Fire / Accident / Others</span>
+        <span class="badge" id="reserving-client-badge">Provident Insurance (PIC) — Motor / Fire / Accident / Others</span>
       </div>
       <div class="page-header-divider"></div>
+
+      <div class="alert alert-warning" id="reserving-data-warning" style="display:none;margin-bottom:16px"></div>
 
       <div class="panel" style="margin-bottom:16px">
         <div class="panel-title">Source data</div>
         <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
-          Reads PIC's own claims triangles, outstanding claims register, UPR/DAC, and ULAE
-          workbooks directly and runs Chain Ladder IBNR for each class of business.
+          Reads the selected client's own claims triangles, outstanding claims register,
+          UPR/DAC, and ULAE workbooks directly and runs the configured reserving method
+          (Chain Ladder or Bornhuetter-Ferguson, per class) for each class of business.
         </p>
-        <button class="btn btn-gold" onclick="runNicSummary()" id="btn-nic-summary">Load NIC summary</button>
-        <button class="btn btn-primary" onclick="downloadReservingExcel()" id="btn-reserving-download" style="display:none;margin-left:8px">Download Excel</button>
-        <button class="btn btn-primary" onclick="downloadNonlifeAvrWord()" id="btn-reserving-avr-word" style="display:none;margin-left:8px">Download AVR Report</button>
-        <span id="nic-summary-info" style="font-size:12px;color:#888;margin-left:12px"></span>
+        <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px">
+          <div>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Client</label>
+            <select id="reserving-client-select" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;min-width:220px" onchange="onReservingClientChanged()"></select>
+          </div>
+          <button class="btn btn-gold" onclick="runNicSummary()" id="btn-nic-summary">Load NIC summary</button>
+          <button class="btn btn-primary" onclick="downloadReservingExcel()" id="btn-reserving-download" style="display:none">Download Excel</button>
+          <button class="btn btn-primary" onclick="downloadNonlifeAvrWord()" id="btn-reserving-avr-word" style="display:none">Download AVR Report</button>
+          <span id="nic-summary-info" style="font-size:12px;color:#888"></span>
+        </div>
       </div>
 
       <div class="panel" style="margin-bottom:16px">
@@ -834,7 +845,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel" style="margin-bottom:16px">
         <div class="panel-title">RI (ceded to reinsurers)</div>
         <div class="table-wrap">
           <table>
@@ -847,6 +858,17 @@
         <div style="margin-top:10px;font-size:12px;color:#888">
           ULAE is not reinsured — RI ULAE is always shown as GHS 0.00, per PIC's own reporting convention.
         </div>
+      </div>
+
+      <div class="panel" id="reserving-notes-panel" style="display:none">
+        <div class="panel-title">Manual review notes &amp; actuarial adjustments</div>
+        <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
+          The engine's computed IBNR above is never changed by a note below — this is a
+          record of actuarial review only. A class flagged for manual review will not
+          have its figure corrected automatically; enter a narrative and, if the review
+          concludes an override is warranted, an adjusted figure here.
+        </p>
+        <div id="reserving-notes-body"></div>
       </div>
     </div>
 
@@ -1454,6 +1476,7 @@ const PAGE_ON_SHOWN = {
   usermgmt:        () => loadUserManagement(),
   assumptionsets:  () => loadAssumptionSetsAdmin(),
   audittrail:      () => loadAuditTrail(),
+  reserving:       () => loadReservingClients(),
 };
 
 function navigateTo(pageId, groupLabel, itemLabel, el) {
@@ -2069,10 +2092,10 @@ async function runRateTable() {
 }
 
 // ── NON-LIFE RESERVING ──────────────────────────────────────────────────────
-function nicRow(cls, row) {
+function nicRow(cls, row, warning) {
   return `
     <tr>
-      <td><strong>${cls}</strong></td>
+      <td><strong>${cls}</strong>${warning ? ' <span class="badge-warning">Review required</span>' : ''}</td>
       <td>${fmt(row.ibnr)}</td>
       <td>${fmt(row.ocr)}</td>
       <td>${fmt(row.ulae)}</td>
@@ -2081,20 +2104,61 @@ function nicRow(cls, row) {
     </tr>`;
 }
 
+function reservingSelectedClientId() {
+  const sel = document.getElementById('reserving-client-select');
+  return (sel && sel.value) || 'pic';
+}
+
+async function loadReservingClients() {
+  const sel = document.getElementById('reserving-client-select');
+  if (sel.dataset.loaded === '1') return;   // populate once — selection persists across nav visits
+  try {
+    const r = await apiFetch('/clients');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    sel.innerHTML = d.data.map(c => `<option value="${_escapeHtml(c.client_id)}">${_escapeHtml(c.name)}</option>`).join('');
+  } catch (e) {
+    sel.innerHTML = '<option value="pic">Provident Insurance (PIC)</option>';
+  }
+  sel.dataset.loaded = '1';
+  onReservingClientChanged();
+}
+
+function onReservingClientChanged() {
+  const sel = document.getElementById('reserving-client-select');
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('reserving-client-badge').textContent = opt ? opt.textContent : '';
+  // Results/warnings/notes are all specific to the previously selected
+  // client — clear them out so nothing stale from another client lingers
+  // on screen until "Load NIC summary" is run again for this one.
+  document.getElementById('reserving-data-warning').style.display = 'none';
+  document.getElementById('reserving-notes-panel').style.display = 'none';
+  document.getElementById('btn-reserving-download').style.display = 'none';
+  document.getElementById('btn-reserving-avr-word').style.display = 'none';
+  document.getElementById('nic-summary-info').textContent = '';
+  ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
+    document.getElementById(id).innerHTML =
+      '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">Click "Load NIC summary" to see results</td></tr>';
+  });
+}
+
 async function runNicSummary() {
+  const clientId = reservingSelectedClientId();
   const btn = document.getElementById('btn-nic-summary');
   btn.innerHTML = '<span class="spinner spinner-dark"></span> Loading...';
   btn.disabled = true;
   document.getElementById('btn-reserving-download').style.display = 'none';
   document.getElementById('btn-reserving-avr-word').style.display = 'none';
+  document.getElementById('reserving-data-warning').style.display = 'none';
+  document.getElementById('reserving-notes-panel').style.display = 'none';
   ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
     document.getElementById(id).innerHTML =
       '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">' +
-      '<span class="spinner spinner-dark"></span> Reading PIC workbooks and running Chain Ladder...</td></tr>';
+      '<span class="spinner spinner-dark"></span> Reading workbooks and running the reserving engine...</td></tr>';
   });
 
   try {
-    const r = await apiFetch('/reserving/nic-summary');
+    const r = await apiFetch('/reserving/nic-summary?client_id=' + encodeURIComponent(clientId));
     const d = await r.json();
     if (!d.success) throw new Error(d.detail);
     const data = d.data;
@@ -2102,9 +2166,16 @@ async function runNicSummary() {
     document.getElementById('nic-summary-info').textContent =
       `${data.classes.length} classes loaded in ${data.elapsed_seconds}s`;
 
+    if (data.data_provenance_warning) {
+      const warnEl = document.getElementById('reserving-data-warning');
+      warnEl.innerHTML = `<strong>Data source not yet confirmed:</strong> ${_escapeHtml(data.data_provenance_warning)}` +
+        (data.data_file_used ? ` <span style="color:#8A6D1D">(reading: ${_escapeHtml(data.data_file_used)})</span>` : '');
+      warnEl.style.display = 'flex';
+    }
+
     ['gross', 'net', 'ri'].forEach(basis => {
       let html = '';
-      data.classes.forEach(cls => { html += nicRow(cls, data.by_class[cls][basis]); });
+      data.classes.forEach(cls => { html += nicRow(cls, data.by_class[cls][basis], data.by_class[cls].warning); });
       html += `
         <tr style="font-weight:bold;background:#f0f7f0">
           <td><strong>Total</strong></td>
@@ -2120,6 +2191,8 @@ async function runNicSummary() {
     document.getElementById('btn-reserving-download').style.display = 'inline-flex';
     document.getElementById('btn-reserving-avr-word').style.display = 'inline-flex';
 
+    await renderReservingNotesPanel(clientId, data);
+
   } catch (e) {
     ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
       document.getElementById(id).innerHTML =
@@ -2128,6 +2201,100 @@ async function runNicSummary() {
   }
 
   btn.innerHTML = 'Load NIC summary';
+  btn.disabled = false;
+}
+
+// ── Manual review notes / actuarial overrides, per client + class ──────────
+// Deliberately separate from the engine's own computed IBNR above — saving
+// a note here never changes those figures. See db.models.ReservingNote and
+// api/main.py's PUT /reserving/notes.
+
+function reservingNoteRowHtml(clientId, cls, warning, note) {
+  const narrative   = note ? _escapeHtml(note.narrative) : '';
+  const grossVal    = (note && note.adjusted_gross_ibnr != null) ? note.adjusted_gross_ibnr : '';
+  const netVal      = (note && note.adjusted_net_ibnr != null)   ? note.adjusted_net_ibnr   : '';
+  const savedStatus = note
+    ? `Last saved by ${_escapeHtml(note.updated_by || '—')} at ${new Date(note.updated_at).toLocaleString()}`
+    : '';
+  return `
+    <div style="border:1px solid #E5E7EB;border-radius:6px;padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <strong style="font-size:13px;color:#1F3864">${_escapeHtml(cls)}</strong>
+        ${warning ? '<span class="badge-warning">Manual review required</span>' : ''}
+      </div>
+      ${warning ? `<div style="font-size:12px;color:#6B5313;margin-bottom:8px">${_escapeHtml(warning)}</div>` : ''}
+      <textarea id="rn-narrative-${cls}" placeholder="Narrative — why this class needed review and what was concluded"
+        style="width:100%;min-height:56px;padding:8px;border:1px solid #ccc;border-radius:6px;font-family:inherit;font-size:12.5px;box-sizing:border-box">${narrative}</textarea>
+      <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <label style="display:block;font-size:11px;color:#888;margin-bottom:4px">Adjusted Gross IBNR (optional)</label>
+          <input type="number" id="rn-gross-${cls}" value="${grossVal}" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;width:160px">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:#888;margin-bottom:4px">Adjusted Net IBNR (optional)</label>
+          <input type="number" id="rn-net-${cls}" value="${netVal}" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;width:160px">
+        </div>
+        <button class="btn btn-primary" onclick="saveReservingNote('${clientId}','${cls}')" id="rn-save-${cls}">Save note</button>
+        <span id="rn-status-${cls}" style="font-size:11px;color:#888">${savedStatus}</span>
+      </div>
+    </div>`;
+}
+
+async function renderReservingNotesPanel(clientId, data) {
+  const panel = document.getElementById('reserving-notes-panel');
+  const body  = document.getElementById('reserving-notes-body');
+  body.innerHTML = '<div style="color:#888;font-size:12px"><span class="spinner spinner-dark"></span> Loading notes...</div>';
+  panel.style.display = 'block';
+
+  let notesByClass = {};
+  try {
+    const r = await apiFetch('/reserving/notes?client_id=' + encodeURIComponent(clientId));
+    const d = await r.json();
+    if (d.success) d.data.forEach(n => { notesByClass[n.class_of_business] = n; });
+  } catch (e) {
+    // Non-fatal — the notes panel just starts empty if this fails.
+  }
+
+  let html = '';
+  data.classes.forEach(cls => {
+    html += reservingNoteRowHtml(clientId, cls, data.by_class[cls].warning, notesByClass[cls]);
+  });
+  body.innerHTML = html;
+}
+
+async function saveReservingNote(clientId, cls) {
+  const btn       = document.getElementById('rn-save-' + cls);
+  const statusEl  = document.getElementById('rn-status-' + cls);
+  const narrative = document.getElementById('rn-narrative-' + cls).value.trim();
+  if (!narrative) {
+    statusEl.innerHTML = '<span style="color:red">Narrative is required.</span>';
+    return;
+  }
+  const grossVal = document.getElementById('rn-gross-' + cls).value;
+  const netVal   = document.getElementById('rn-net-' + cls).value;
+
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Saving...';
+  btn.disabled = true;
+  try {
+    const r = await apiFetch('/reserving/notes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id:           clientId,
+        class_of_business:   cls,
+        narrative:           narrative,
+        adjusted_gross_ibnr: grossVal === '' ? null : parseFloat(grossVal),
+        adjusted_net_ibnr:   netVal   === '' ? null : parseFloat(netVal),
+      }),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    statusEl.innerHTML = `Saved by ${_escapeHtml(d.data.updated_by || '—')} at ${new Date(d.data.updated_at).toLocaleString()}`;
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">Save failed: ${e.message}</span>`;
+  }
+  btn.innerHTML = original;
   btn.disabled = false;
 }
 
@@ -2140,7 +2307,7 @@ async function downloadReservingExcel() {
     const r = await apiFetch('/nonlife/statements', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: 'pic', period: 'FY2025' })
+      body: JSON.stringify({ client_id: reservingSelectedClientId(), period: 'FY2025' })
     });
     const d = await r.json();
     if (!d.success) throw new Error(d.detail);
@@ -2162,7 +2329,7 @@ async function downloadNonlifeAvrWord() {
     const r = await apiFetch('/export/nonlife-word', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: 'pic', period: 'FY2025' })
+      body: JSON.stringify({ client_id: reservingSelectedClientId(), period: 'FY2025' })
     });
     const d = await r.json();
     if (!d.success) throw new Error(d.detail);

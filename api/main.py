@@ -35,7 +35,7 @@ from outputs.custom_pricing_word_exporter import generate_custom_pricing_avr_not
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
 from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
-from db.models import User, ValuationRun, UserRole, AssumptionSet as AssumptionSetModel
+from db.models import User, ValuationRun, UserRole, AssumptionSet as AssumptionSetModel, ReservingNote
 from auth.dependencies import get_current_user, get_current_admin
 from auth.router import router as auth_router
 
@@ -780,6 +780,63 @@ def reserving_nic_summary_endpoint(client_id: str = DEFAULT_CLIENT, db: Session 
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  RESERVING NOTES — manual actuarial review/override, per client + class
+# ══════════════════════════════════════════════════════════════════════════════
+# Deliberately separate from the engine: run_nic_summary()'s own computed
+# IBNR is never overwritten by these. This exists so a class flagged via
+# ClientConfig.class_warnings (e.g. QIC's Accident — see
+# clients/qic/assumptions.yaml) has somewhere for an actuary to record a
+# reviewed figure and the reasoning behind it, preserving that as a human
+# judgement call rather than the engine silently guessing at one. One note
+# per (client_id, class_of_business) — saving again overwrites the prior
+# note for that pair, there is no version history (see db.models.ReservingNote).
+
+class ReservingNoteRequest(BaseModel):
+    client_id:           str             = Field(..., description="Which insurer — see GET /clients")
+    class_of_business:   str             = Field(..., description="e.g. Motor, Fire, Accident, Others")
+    narrative:           str             = Field(..., min_length=1, description="Actuarial narrative — why this class needed review and what was concluded")
+    adjusted_gross_ibnr: Optional[float] = Field(None, description="Optional — the actuary's own reviewed Gross IBNR figure, if the review concludes an override is warranted")
+    adjusted_net_ibnr:   Optional[float] = Field(None, description="Optional — same, Net")
+
+def _reserving_note_to_dict(note: ReservingNote, db: Session) -> dict:
+    author = db.query(User).filter(User.id == note.user_id).first()
+    return {
+        "id":                  note.id,
+        "client_id":           note.client_id,
+        "class_of_business":   note.class_of_business,
+        "narrative":           note.narrative,
+        "adjusted_gross_ibnr": note.adjusted_gross_ibnr,
+        "adjusted_net_ibnr":   note.adjusted_net_ibnr,
+        "updated_by":          author.email if author else None,
+        "updated_at":          note.updated_at.isoformat() if note.updated_at else None,
+    }
+
+@protected.get("/reserving/notes")
+def list_reserving_notes(client_id: str = DEFAULT_CLIENT, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    notes = db.query(ReservingNote).filter(ReservingNote.client_id == client_id).all()
+    return {"success": True, "data": [_reserving_note_to_dict(n, db) for n in notes]}
+
+@protected.put("/reserving/notes")
+def upsert_reserving_note(request: ReservingNoteRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    note = (
+        db.query(ReservingNote)
+        .filter(ReservingNote.client_id == request.client_id, ReservingNote.class_of_business == request.class_of_business)
+        .first()
+    )
+    if note is None:
+        note = ReservingNote(client_id=request.client_id, class_of_business=request.class_of_business, user_id=current_user.id)
+        db.add(note)
+    note.narrative           = request.narrative
+    note.adjusted_gross_ibnr = request.adjusted_gross_ibnr
+    note.adjusted_net_ibnr   = request.adjusted_net_ibnr
+    note.user_id             = current_user.id
+    db.commit()
+    db.refresh(note)
+    return {"success": True, "data": _reserving_note_to_dict(note, db)}
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  NON-LIFE PAA STATEMENTS (Phase 2)

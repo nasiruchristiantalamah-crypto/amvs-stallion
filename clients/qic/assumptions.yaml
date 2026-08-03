@@ -60,13 +60,33 @@
 # reserving-method problem (see OCR/Accident note above), so switching its
 # method wouldn't address the actual cause.
 #
-# Reconciliation is still NOT expected to be exact even with BF — AMVS's
-# non-life summary here is undiscounted with no risk adjustment, while the
-# real AVR figures are discounted BEL + RA. Closing that gap needs a
-# discounting/RA layer on top of run_nic_summary(), not just a method
-# change (see engine/ifrs17_nonlife.py's generate_nonlife_paa_statements()
-# for where that already exists for the full statements, just not surfaced
-# through run_nic_summary()'s own IBNR figure).
+# Reconciliation is still NOT expected to be exact even with BF, and the
+# remaining Motor/Fire gap above should NOT be read as "BF is still wrong"
+# — AMVS's non-life summary here is undiscounted with no risk adjustment,
+# while the real AVR figures are duration-matched DISCOUNTED BEL + RA.
+# Discounting alone reduces a liability estimate (money paid later is worth
+# less today), so part of the remaining gap is expected to close on its own
+# once that layer exists — closing it needs a discounting/RA layer built on
+# top of run_nic_summary(), not a further method change (see
+# engine/ifrs17_nonlife.py's generate_nonlife_paa_statements() for where
+# that already exists for the full statements, just not surfaced through
+# run_nic_summary()'s own IBNR figure — see its use_discounting /
+# discount_duration_years parameters and load_yield_curve()).
+#
+# ACCIDENT — flagged for manual review, deliberately NOT fixed in code:
+# unlike Motor/Fire, this gap is not a reserving-method problem (chain
+# ladder vs BF doesn't apply — Accident's liability here is a raw case
+# reserve total, not a triangle projection), so it isn't something a
+# method override can address. See class_warnings below, surfaced verbatim
+# by run_nic_summary() (by_class["Accident"]["warning"]) and shown on the
+# dashboard Reserving page. Any manual adjustment an actuary makes after
+# reviewing case reserve adequacy should be recorded via a ReservingNote
+# (db.models.ReservingNote, PUT /reserving/notes) — narrative + optional
+# adjusted_gross_ibnr/adjusted_net_ibnr — never by silently changing this
+# file or the engine's own computed figure.
+#
+# DATA PROVENANCE — also flagged, also not resolved: see
+# data_provenance_warning / data_file_used below.
 #
 # The actual data FOLDER path is environment-specific and lives outside
 # git — see clients/qic/client.yaml (gitignored, local dev only) and the
@@ -94,6 +114,29 @@ assumption_overrides: {}
 reserving_methods:
   Motor: bornhuetter_ferguson
   Fire: bornhuetter_ferguson
+
+# Per-class warning, surfaced verbatim by run_nic_summary() and the
+# dashboard Reserving page — see the ACCIDENT note above for why this is a
+# review flag, not a code fix.
+class_warnings:
+  Accident: "Accident class IBNR requires manual case reserve adequacy review before submission — raw case reserves may include amounts subject to actuarial adjustment."
+
+# Which raw_data_workbook file this client's non-life output is actually
+# computed from (mirrors data_files.raw_data_workbook above — kept as its
+# own field so it can be shown alongside data_provenance_warning without
+# the dashboard needing to know which data_files key is "the risky one").
+data_file_used: "2025 QIC Final Data.xlsx"
+# NOT YET CONFIRMED: whether this is the same data cut Zamara Actuaries
+# used for the real, audited "2025 QIC Actuarial Valuation Report - Final"
+# (May 2026). This client's own folder structure also has a separate "DATA
+# REVIEWED" tree (e.g. 2025 Outstanding Data Reviewed.xlsx) that is
+# materially smaller than the file configured above — it is unconfirmed
+# whether that reviewed/cleaned data set, this one, or some later
+# combination of both is what actually fed the real valuation. This
+# ambiguity is a plausible contributor to the Accident and Motor gaps
+# documented above. Confirm with QIC or Zamara before treating this
+# client's non-life output as reconciled or submission-ready.
+data_provenance_warning: "QIC non-life data source not yet confirmed against Zamara's valuation data — see data_file_used and the comment above it."
 
 reinsurance:
   treaty_type: "quota_share"

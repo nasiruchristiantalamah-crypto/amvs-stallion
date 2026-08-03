@@ -33,13 +33,28 @@ What this file does:
                         named basis ("PIC Pricing Basis 2025", "Stressed
                         Assumptions") across multiple runs without
                         re-entering every field each time.
+        ReservingNote  — an actuary's manual case-reserve-adequacy review
+                        for one client/class of business on the non-life
+                        Reserving page: a required narrative, plus optional
+                        adjusted_gross_ibnr/adjusted_net_ibnr the actuary
+                        can record as their own reviewed figure. This is
+                        deliberately NOT applied automatically anywhere —
+                        engine.runner.run_nic_summary()'s own computed
+                        figure is never overwritten by it. It exists so a
+                        flagged class (see ClientConfig.class_warnings,
+                        e.g. QIC's Accident class) has somewhere to record
+                        the human judgement call instead of the engine
+                        silently guessing at one. One row per (client_id,
+                        class_of_business) — saving again overwrites the
+                        prior note for that pair; there is no version
+                        history.
 ================================================================================
 """
 
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SAEnum, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from db.database import Base
@@ -113,5 +128,27 @@ class AssumptionSet(Base):
     # identically on both SQLite (dev) and Postgres (prod) without either
     # engine re-normalising key order/types.
     assumptions_json  = Column(Text, nullable=False)
+
+    user = relationship("User")
+
+
+class ReservingNote(Base):
+    __tablename__ = "reserving_notes"
+    __table_args__ = (
+        UniqueConstraint("client_id", "class_of_business", name="uq_reserving_note_client_class"),
+    )
+
+    id                  = Column(Integer, primary_key=True, index=True)
+    client_id           = Column(String(64), nullable=False, index=True)   # e.g. "pic", "qic" — see engine/clients.py
+    class_of_business   = Column(String(64), nullable=False, index=True)   # e.g. "Motor", "Fire", "Accident", "Others"
+    narrative           = Column(Text, nullable=False)
+    # Optional — the actuary's own reviewed figure, if the review concludes
+    # the engine's computed IBNR should be overridden. Left null when the
+    # note is purely a review record with no numeric override.
+    adjusted_gross_ibnr = Column(Float, nullable=True)
+    adjusted_net_ibnr   = Column(Float, nullable=True)
+    user_id             = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    created_at          = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at          = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
 
     user = relationship("User")

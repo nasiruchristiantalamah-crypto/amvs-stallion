@@ -101,6 +101,23 @@ class ClientConfig:
     # against QIC's real 2025 AVR and found materially overstated/
     # understated respectively).
     reserving_methods:         Dict[str, str] = field(default_factory=dict)
+    # Per-class warning surfaced verbatim in run_nic_summary()'s output and
+    # the dashboard Reserving page — for a gap that reserving METHOD can't
+    # fix (e.g. QIC's Accident class: the raw case-reserve figure doesn't
+    # reconcile to the real AVR for reasons that look like actuarial
+    # case-reserve judgement, not a chain-ladder/BF choice — see
+    # clients/qic/assumptions.yaml). Deliberately NOT auto-applied to the
+    # figures — this exists to flag that a human actuary needs to review
+    # and, if appropriate, record a manual adjustment (db.models.ReservingNote),
+    # not to silently correct the number.
+    class_warnings:            Dict[str, str] = field(default_factory=dict)
+    # Client-level (not per-class) warning about the PROVENANCE of the
+    # source data itself — e.g. "this workbook hasn't been confirmed as the
+    # same data cut a third-party actuary used for their real valuation."
+    # data_file_used records which file that warning is actually about, for
+    # display alongside it.
+    data_provenance_warning:   Optional[str] = None
+    data_file_used:            Optional[str] = None
 
     @property
     def root(self) -> str:
@@ -186,6 +203,7 @@ def load_client(client_id: str) -> ClientConfig:
         str(k).strip().lower(): v for k, v in (raw.get("ocr_class_mapping") or {}).items()
     }
     reserving_methods = dict(raw.get("reserving_methods") or {})
+    class_warnings    = dict(raw.get("class_warnings") or {})
 
     return ClientConfig(
         client_id             = client_id,
@@ -199,6 +217,9 @@ def load_client(client_id: str) -> ClientConfig:
         reinsurance                   = raw.get("reinsurance") or {},
         ocr_class_mapping                = ocr_class_mapping,
         reserving_methods                 = reserving_methods,
+        class_warnings                      = class_warnings,
+        data_provenance_warning              = raw.get("data_provenance_warning"),
+        data_file_used                        = raw.get("data_file_used"),
     )
 
 
