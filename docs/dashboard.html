@@ -554,7 +554,7 @@
           </div>
           <button class="btn btn-gold" onclick="runUploadReserving()" id="btn-upload-run">▶ Run Reserving</button>
         </div>
-        <span id="upload-files-info" style="font-size:12px;color:#888"></span>
+        <div id="upload-files-info" style="font-size:12px;color:#888"></div>
         <div id="upload-status" style="font-size:13px;margin-top:8px"></div>
         <div id="upload-results-actions" style="display:none;margin-top:12px">
           <button class="btn btn-primary" onclick="downloadUploadExcel()" id="btn-upload-download-excel">⬇ Download Excel</button>
@@ -1178,10 +1178,45 @@ async function downloadNonlifeAvrWord() {
 // the temp copies), so every call needs the files resent.
 let uploadedFileList = null;
 
+// Must match api/main.py's _REQUIRED_UPLOAD_KEYS / clients/pic/assumptions.yaml's
+// data_files — shown here so the user can see, before clicking Run, whether
+// what they picked actually satisfies the (exact-filename) requirement.
+const REQUIRED_UPLOAD_FILENAMES = [
+  "2025 IBNR Projection (Gross & Net) - Final.xlsx",
+  "2025 PIC Final Data.xlsx",
+  "UPR & DAC (2025).xlsx",
+  "PIC ULAE (2025) - Final.xlsx",
+];
+
+function _escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
 function onUploadFilesSelected() {
   uploadedFileList = document.getElementById('upload-files-input').files;
-  document.getElementById('upload-files-info').textContent =
-    uploadedFileList.length ? `${uploadedFileList.length} file(s) selected` : '';
+  const infoEl = document.getElementById('upload-files-info');
+
+  if (!uploadedFileList.length) {
+    infoEl.innerHTML = '';
+    return;
+  }
+
+  const uploadedNames = Array.from(uploadedFileList).map(f => f.name);
+  const uploadedListHtml = uploadedNames.map(n => `<li>${_escapeHtml(n)}</li>`).join('');
+
+  const requiredListHtml = REQUIRED_UPLOAD_FILENAMES.map(req => {
+    const present = uploadedNames.some(n => n.toLowerCase() === req.toLowerCase());
+    return `<li style="color:${present ? '#2a7' : '#c33'}">${present ? '✓' : '✗ missing —'} ${_escapeHtml(req)}</li>`;
+  }).join('');
+
+  infoEl.innerHTML = `
+    <strong>${uploadedFileList.length} file(s) selected:</strong>
+    <ul style="margin:4px 0 8px 18px;padding:0">${uploadedListHtml}</ul>
+    <strong>Required files:</strong>
+    <ul style="margin:4px 0 0 18px;padding:0">${requiredListHtml}</ul>
+  `;
 }
 
 function _buildUploadFormData() {
