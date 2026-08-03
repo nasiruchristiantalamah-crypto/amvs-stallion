@@ -43,7 +43,7 @@ from typing import Dict, List, Optional
 from engine.assumptions import ReportingFrequency
 from engine.assumptions_store import load_assumptions
 from engine.assumptions_manager import AssumptionSet
-from engine.clients import load_product
+from engine.clients import load_product, load_client
 from engine.decrement import run_decrement_projection, summarise_decrement
 from engine.cashflows import calculate_cash_flows
 from engine.present_value import calculate_present_values
@@ -525,6 +525,13 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
                 isn't ceded to reinsurers)
         - UPR / DAC: data_loader.load_upr_dac() (the client's own computed figures)
 
+    Reserving method is chain_ladder by default; a client can override this
+    per class via clients/<client_id>/assumptions.yaml's reserving_methods:
+    (e.g. {"Motor": "bornhuetter_ferguson"}) — see ClientConfig.reserving_methods
+    and engine/bornhuetter_ferguson.py for when that's appropriate (a thin
+    or volatile triangle where chain ladder's pure extrapolation of the
+    latest diagonal is unstable).
+
     RI (ceded to reinsurers) for IBNR/OCR/UPR/DAC = Gross - Net in each case.
 
     Returns:
@@ -542,6 +549,7 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
         print(f"  AMVS NIC NON-LIFE SUMMARY — all classes — client: {client_id}")
         print(f"{'='*60}")
 
+    client       = load_client(client_id)
     ocr_data     = load_ocr(client_id=client_id, data_folder_override=data_folder_override)
     upr_dac_data = load_upr_dac(client_id=client_id, data_folder_override=data_folder_override)
     ulae_data    = load_ulae(client_id=client_id, data_folder_override=data_folder_override)
@@ -558,11 +566,15 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
 
     by_class: dict = {}
     for cls in RESERVING_CLASSES:
-        tri = load_triangle(cls, client_id=client_id, data_folder_override=data_folder_override)
+        tri    = load_triangle(cls, client_id=client_id, data_folder_override=data_folder_override)
+        method = client.reserving_methods.get(cls, "chain_ladder")
         reserving = run_reserving(
             class_of_business = cls,
             gross_triangle    = tri["gross_triangle"],
             net_triangle      = tri["net_triangle"],
+            method            = method,
+            gross_premium     = tri["gross_premium"],
+            net_premium       = tri["net_premium"],
             verbose           = False,
         )
 
@@ -583,6 +595,7 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
         net_dac    = upr_dac_data[cls]["net_dac"]
 
         by_class[cls] = {
+            "method": method,
             "gross": {
                 "ibnr": round(gross_ibnr, 2), "ocr": round(gross_ocr, 2),
                 "ulae": round(gross_ulae, 2), "upr":  round(gross_upr, 2),
@@ -602,7 +615,7 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
         }
 
         if verbose:
-            print(f"  {cls:10s}  Gross IBNR={gross_ibnr:>14,.0f}  Net IBNR={net_ibnr:>14,.0f}")
+            print(f"  {cls:10s} [{method:22s}]  Gross IBNR={gross_ibnr:>14,.0f}  Net IBNR={net_ibnr:>14,.0f}")
 
     totals = {"gross": {}, "net": {}, "ri": {}}
     for basis in ("gross", "net", "ri"):

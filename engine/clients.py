@@ -89,6 +89,18 @@ class ClientConfig:
     # keyword. Keys are matched case-insensitively. See
     # engine/data_loader.py's _bucket_granular().
     ocr_class_mapping:         Dict[str, str] = field(default_factory=dict)
+    # Per-class override of engine.runner.run_reserving()'s reserving
+    # method — {"Motor": "bornhuetter_ferguson"} etc. Any class not listed
+    # here defaults to "chain_ladder" (the validated default for PIC).
+    # Chain Ladder is unstable on a thin/volatile triangle (it purely
+    # extrapolates the latest diagonal via a development factor, with no
+    # anchor) — Bornhuetter-Ferguson blends that with an expected loss
+    # ratio derived from premium, which damps that instability. See
+    # clients/qic/assumptions.yaml for why QIC's Motor and Fire classes use
+    # this override (chain-ladder's undiscounted estimate was validated
+    # against QIC's real 2025 AVR and found materially overstated/
+    # understated respectively).
+    reserving_methods:         Dict[str, str] = field(default_factory=dict)
 
     @property
     def root(self) -> str:
@@ -173,6 +185,7 @@ def load_client(client_id: str) -> ClientConfig:
     ocr_class_mapping = {
         str(k).strip().lower(): v for k, v in (raw.get("ocr_class_mapping") or {}).items()
     }
+    reserving_methods = dict(raw.get("reserving_methods") or {})
 
     return ClientConfig(
         client_id             = client_id,
@@ -185,6 +198,7 @@ def load_client(client_id: str) -> ClientConfig:
         assumption_overrides        = raw.get("assumption_overrides") or {},
         reinsurance                   = raw.get("reinsurance") or {},
         ocr_class_mapping                = ocr_class_mapping,
+        reserving_methods                 = reserving_methods,
     )
 
 

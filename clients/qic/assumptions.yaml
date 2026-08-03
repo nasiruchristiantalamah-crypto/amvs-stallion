@@ -38,11 +38,35 @@
 # Not investigated yet: whether the real AVR was built from a cleaner/
 # reviewed data cut than the workbooks configured below (this client's
 # folder also has a "DATA REVIEWED" tree with a much smaller Outstanding
-# Claims file — not the one referenced here), and whether
-# Bornhuetter-Ferguson (blends with an expected loss ratio, more robust to
-# an immature/volatile triangle than pure chain-ladder) reconciles better
-# for Motor. See engine/runner.py's run_reserving(method=...) if picking
-# this up again.
+# Claims file — not the one referenced here).
+#
+# UPDATE 2026-08-03 — Motor and Fire switched to Bornhuetter-Ferguson (see
+# reserving_methods below). Both are driven by the same root cause: chain
+# ladder purely extrapolates the latest diagonal via a development factor,
+# with no anchor, so a thin/volatile triangle (Fire) or an anomalous latest
+# origin year (Motor's 2025 first-development spike, see above) throws it
+# off in either direction. BF damps that by blending with an expected loss
+# ratio estimated from this client's own premium history. Re-validated
+# against the same real AVR after the switch:
+#   Class     AMVS before (chain_ladder)          AMVS after (BF)                      Real AVR
+#   Motor     GHS 42,983,393  (~78% overstated)    GHS 39,140,158  (~62% overstated)    GHS 24,104,000
+#   Fire      GHS 64,132      (~62% understated)   GHS 161,506     (~5% understated)     GHS 170,000
+# Fire is now close to reconciled even without discounting. Motor improved
+# (78%→62% overstated, ~20% reduction in the absolute dollar gap) but is
+# still materially overstated — BF only damps chain ladder's instability,
+# it doesn't fix that 2025's own first-development claims figure is
+# genuinely elevated relative to its premium growth, which BF's blended
+# estimate still partly reflects. Accident is untouched: its gap isn't a
+# reserving-method problem (see OCR/Accident note above), so switching its
+# method wouldn't address the actual cause.
+#
+# Reconciliation is still NOT expected to be exact even with BF — AMVS's
+# non-life summary here is undiscounted with no risk adjustment, while the
+# real AVR figures are discounted BEL + RA. Closing that gap needs a
+# discounting/RA layer on top of run_nic_summary(), not just a method
+# change (see engine/ifrs17_nonlife.py's generate_nonlife_paa_statements()
+# for where that already exists for the full statements, just not surfaced
+# through run_nic_summary()'s own IBNR figure).
 #
 # The actual data FOLDER path is environment-specific and lives outside
 # git — see clients/qic/client.yaml (gitignored, local dev only) and the
@@ -60,6 +84,16 @@ data_files:
   ulae_sheet:        "ULAE Calculation (Rev)"
 
 assumption_overrides: {}
+
+# Per-class reserving method override (default is chain_ladder — see
+# engine/clients.py's ClientConfig.reserving_methods and
+# engine/runner.py's run_nic_summary()). Motor and Fire use
+# Bornhuetter-Ferguson here specifically because chain ladder was validated
+# against QIC's real 2025 AVR and found materially off for both — see the
+# note above.
+reserving_methods:
+  Motor: bornhuetter_ferguson
+  Fire: bornhuetter_ferguson
 
 reinsurance:
   treaty_type: "quota_share"
