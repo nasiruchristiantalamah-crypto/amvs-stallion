@@ -6,17 +6,43 @@
 # in the IBNR workbook; Premium & Commission-2025/Paid Claims-2025/
 # Outstanding Claims-2025 in the raw data workbook; ULAE Calculation (Rev)
 # in the ULAE workbook — QIC and PIC clearly share the same underlying
-# actuarial workpaper template). What has NOT been fully verified end-to-end
-# yet: QIC's "Outstanding Claims-2025" sheet has a DIFFERENT column layout
-# than PIC's (extra "IFRS 17 Portfolio" and "Underwriting Date" columns,
-# Policy Number/Claim Number reversed, amount columns at different
-# positions) — engine/data_loader.py's load_ocr() was made column-position-
-# independent (searches for header text rather than assuming fixed
-# columns) specifically to handle this, but a full run against QIC's real
-# numbers with a known benchmark (the way PIC was validated against its own
-# real Balance Sheet 2025) has not been done. Treat QIC's non-life output
-# as "should work structurally" rather than "validated," until it's been
-# checked against a real QIC valuation result.
+# actuarial workpaper template). QIC's "Outstanding Claims-2025" sheet has a
+# DIFFERENT column layout than PIC's (extra "IFRS 17 Portfolio" and
+# "Underwriting Date" columns, Policy Number/Claim Number reversed, amount
+# columns at different positions) — engine/data_loader.py's load_ocr() was
+# made column-position-independent (searches for header text rather than
+# assuming fixed columns) specifically to handle this.
+#
+# VALIDATED 2026-08-03 — DOES NOT RECONCILE, do not treat as production/
+# regulatory-ready. Ran engine.runner.run_nic_summary(client_id="qic")
+# against the workbooks configured below and compared to Stallion/Zamara's
+# real audited "2025 QIC Actuarial Valuation Report — Final.pdf" (May 2026):
+#   Class     AMVS (chain-ladder IBNR + OCR, undiscounted)   Real AVR (Total LIC, discounted BEL+RA)
+#   Motor     GHS 42,983,393                                  GHS 24,104,000   (~78% overstated)
+#   Fire      GHS 64,132                                      GHS 170,000      (~62% understated)
+#   Accident  GHS 884,830                                      GHS 54,000       (>15x overstated)
+# Root causes identified so far (not fixed):
+#   - Motor: this client's own triangle shows the 2025 origin year's first
+#     development-period value (GHS 14.7m) more than double 2024's
+#     equivalent point, while premium only grew ~32% over the same period —
+#     chain ladder amplifies that anomaly into an inflated ultimate/IBNR.
+#     Confirmed this is a real feature of the source triangle, not a
+#     parsing bug (raw values read from the sheet were checked directly).
+#   - OCR/Accident: the raw Outstanding Claims labels are clean ("MOTOR",
+#     "ACCIDENT", "FIRE", "LIABILITY", "AGRIC" — no bucketing corruption),
+#     so the gap isn't a label-mapping bug either. AMVS's simple
+#     case-reserve + chain-ladder gap is evidently not equivalent to the
+#     real actuaries' full IFRS17 discounted BEL/RA methodology for this
+#     client — different data vintage and/or actuarial judgement in the
+#     real report that this automated pipeline doesn't replicate.
+# Not investigated yet: whether the real AVR was built from a cleaner/
+# reviewed data cut than the workbooks configured below (this client's
+# folder also has a "DATA REVIEWED" tree with a much smaller Outstanding
+# Claims file — not the one referenced here), and whether
+# Bornhuetter-Ferguson (blends with an expected loss ratio, more robust to
+# an immature/volatile triangle than pure chain-ladder) reconciles better
+# for Motor. See engine/runner.py's run_reserving(method=...) if picking
+# this up again.
 #
 # The actual data FOLDER path is environment-specific and lives outside
 # git — see clients/qic/client.yaml (gitignored, local dev only) and the
