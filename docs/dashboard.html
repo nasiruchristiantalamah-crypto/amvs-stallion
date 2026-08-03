@@ -790,8 +790,9 @@
         </p>
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px">
           <div>
-            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Workbooks (.xlsx, multiple)</label>
+            <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Workbooks (.xlsx — pick all 4 at once, or add them one at a time)</label>
             <input type="file" id="upload-files-input" accept=".xlsx" multiple onchange="onUploadFilesSelected()">
+            <a href="#" onclick="clearUploadedFiles();return false" id="btn-clear-uploads" style="display:none;margin-left:10px;font-size:12px;color:#1F3864">Clear selection</a>
           </div>
           <div>
             <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Client name</label>
@@ -2343,13 +2344,21 @@ async function downloadNonlifeAvrWord() {
 }
 
 // ── Upload-your-own-data reserving flow ─────────────────────────────────────
-// The file input's FileList is kept in this module-level variable (not
-// re-read from the <input> each time) so the Download Excel / Download Word
-// buttons can resubmit the SAME uploaded workbooks after the initial Run
-// Reserving call, without asking the user to pick files twice — the
-// /upload/* endpoints are stateless (accept files, run the engine, delete
-// the temp copies), so every call needs the files resent.
-let uploadedFileList = null;
+// Selected files accumulate in this module-level array across MULTIPLE file
+// input events — NOT read straight from the <input>'s .files each time.
+// A native <input type="file"> REPLACES its own .files with only the most
+// recently picked files every time the dialog is opened, even with
+// `multiple` set — it does not merge across separate dialog sessions. If
+// this array just mirrored input.files directly, picking file 1 then going
+// back to pick file 2 would silently drop file 1 (this was a real reported
+// bug — the second upload was overwriting the first). onUploadFilesSelected()
+// merges each new selection into this array instead of replacing it. This
+// array is also what lets the Download Excel / Download Word buttons
+// resubmit the SAME uploaded workbooks after the initial Run Reserving call
+// without asking the user to pick files twice — the /upload/* endpoints are
+// stateless (accept files, run the engine, delete the temp copies), so
+// every call needs the files resent.
+let uploadedFileList = [];
 
 // Must match api/main.py's _REQUIRED_UPLOAD_KEYS / clients/pic/assumptions.yaml's
 // data_files — shown here so the user can see, before clicking Run, whether
@@ -2368,15 +2377,42 @@ function _escapeHtml(s) {
 }
 
 function onUploadFilesSelected() {
-  uploadedFileList = document.getElementById('upload-files-input').files;
-  const infoEl = document.getElementById('upload-files-info');
+  const newFiles = Array.from(document.getElementById('upload-files-input').files);
+  // Merge into the accumulated selection: re-picking a filename already in
+  // the list replaces just that entry (picking a corrected version of the
+  // same workbook); a different filename is ADDED, not swapped in — see
+  // the comment on uploadedFileList's declaration for why this matters.
+  newFiles.forEach(newFile => {
+    const idx = uploadedFileList.findIndex(f => f.name.toLowerCase() === newFile.name.toLowerCase());
+    if (idx >= 0) uploadedFileList[idx] = newFile;
+    else uploadedFileList.push(newFile);
+  });
+  // Reset the native input so picking the exact same filename again later
+  // still fires a change event (browsers suppress it otherwise since,
+  // as far as the <input> is concerned, nothing changed).
+  document.getElementById('upload-files-input').value = '';
+
+  renderUploadFilesInfo();
+}
+
+function clearUploadedFiles() {
+  uploadedFileList = [];
+  document.getElementById('upload-files-input').value = '';
+  renderUploadFilesInfo();
+}
+
+function renderUploadFilesInfo() {
+  const infoEl  = document.getElementById('upload-files-info');
+  const clearEl = document.getElementById('btn-clear-uploads');
 
   if (!uploadedFileList.length) {
     infoEl.innerHTML = '';
+    clearEl.style.display = 'none';
     return;
   }
+  clearEl.style.display = 'inline';
 
-  const uploadedNames = Array.from(uploadedFileList).map(f => f.name);
+  const uploadedNames = uploadedFileList.map(f => f.name);
   const uploadedListHtml = uploadedNames.map(n => `<li>${_escapeHtml(n)}</li>`).join('');
 
   const requiredListHtml = REQUIRED_UPLOAD_FILENAMES.map(req => {
