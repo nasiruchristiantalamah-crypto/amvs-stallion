@@ -5,68 +5,116 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AMVS — Ghana Actuarial Modelling & Valuation System</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f5f5f5; color: #333; font-size: 14px; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #F3F4F6; color: #1a1a1a; font-size: 13px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
 
   /* ── Layout ── */
-  .shell { display: grid; grid-template-columns: 210px 1fr; min-height: 100vh; }
-  .sidebar { background: #1F3864; color: white; padding: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
-  .main { padding: 24px; overflow: auto; }
+  .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+  .sidebar { background: #1F3864; color: rgba(255,255,255,0.85); padding: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
+  .content-area { display: flex; flex-direction: column; min-height: 100vh; }
+  .main { padding: 20px 24px; overflow: auto; flex: 1; }
 
-  /* ── Sidebar ── */
-  .logo { padding: 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-  .logo-title { font-size: 16px; font-weight: bold; color: white; }
-  .logo-sub   { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px; }
-  .nav-item { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; color: rgba(255,255,255,0.7); font-size: 13px; border-left: 3px solid transparent; transition: all .15s; }
-  .nav-item:hover  { background: rgba(255,255,255,0.08); color: white; }
-  .nav-item.active { background: rgba(255,255,255,0.12); color: white; border-left-color: #C9A84C; font-weight: bold; }
-  .nav-icon { font-size: 18px; }
-  .api-dot { width: 8px; height: 8px; border-radius: 50%; background: #aaa; display: inline-block; margin-right: 6px; }
-  .api-dot.online  { background: #4CAF50; }
-  .api-dot.offline { background: #f44336; }
-  .sidebar-footer { padding: 16px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: rgba(255,255,255,0.4); margin-top: auto; }
+  /* ── Sidebar: logo + user ── */
+  .sidebar-logo { padding: 18px 18px 14px; border-bottom: 1px solid rgba(255,255,255,0.10); }
+  .sidebar-logo-title { font-size: 17px; font-weight: 700; color: white; letter-spacing: 0.4px; }
+  .sidebar-logo-sub { font-size: 10.5px; color: rgba(255,255,255,0.45); margin-top: 3px; line-height: 1.4; }
+  .sidebar-user { padding: 11px 18px; border-bottom: 1px solid rgba(255,255,255,0.10); }
+  .sidebar-user-name { font-size: 12.5px; font-weight: 600; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar-user-company { font-size: 10.5px; color: rgba(255,255,255,0.45); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ── Sidebar: collapsible nav groups ── */
+  .nav-groups { flex: 1; padding: 6px 0; }
+  .nav-group-header { display: flex; align-items: center; justify-content: space-between; padding: 11px 18px 7px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.7px; text-transform: uppercase; color: rgba(255,255,255,0.38); cursor: pointer; user-select: none; }
+  .nav-group-header:hover { color: rgba(255,255,255,0.65); }
+  .nav-group-header .chevron { transition: transform .15s; opacity: 0.7; }
+  .nav-group-header.collapsed .chevron { transform: rotate(-90deg); }
+  .nav-group-items { overflow: hidden; max-height: 400px; transition: max-height .2s ease; }
+  .nav-group-items.collapsed { max-height: 0; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 18px 8px 20px; cursor: pointer; color: rgba(255,255,255,0.62); font-size: 12.5px; border-left: 3px solid transparent; transition: background .12s, color .12s; }
+  .nav-item svg { flex-shrink: 0; opacity: 0.7; }
+  .nav-item:hover { background: rgba(255,255,255,0.06); color: white; }
+  .nav-item.active { background: rgba(255,255,255,0.10); color: white; border-left-color: #C9A84C; font-weight: 600; }
+  .nav-item.active svg { opacity: 1; }
+
+  /* ── Sidebar footer ── */
+  .api-dot { width: 7px; height: 7px; border-radius: 50%; background: #888; display: inline-block; margin-right: 6px; }
+  .api-dot.online  { background: #3FB950; }
+  .api-dot.offline { background: #E5534B; }
+  .sidebar-footer { padding: 11px 18px; border-top: 1px solid rgba(255,255,255,0.10); font-size: 10.5px; color: rgba(255,255,255,0.42); }
+  .sidebar-version { margin-top: 3px; color: rgba(255,255,255,0.3); }
+
+  /* ── App header bar ── */
+  .app-header { height: 52px; min-height: 52px; background: white; border-bottom: 1px solid #e3e5e9; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; position: sticky; top: 0; z-index: 6; }
+  .breadcrumb { font-size: 13px; color: #6b7280; }
+  .breadcrumb strong { color: #1F3864; font-weight: 600; }
+  .breadcrumb-sep { color: #c7cbd1; margin: 0 7px; }
+  .header-actions { display: flex; align-items: center; gap: 2px; }
+  .header-icon-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; color: #6b7280; }
+  .header-icon-btn:hover { background: #f0f1f4; color: #1F3864; }
+  .avatar-wrap { position: relative; margin-left: 6px; }
+  .avatar-circle { width: 30px; height: 30px; border-radius: 50%; background: #1F3864; color: white; display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 700; cursor: pointer; letter-spacing: 0.3px; }
+  .avatar-dropdown { position: absolute; top: 40px; right: 0; background: white; border: 1px solid #e3e5e9; border-radius: 8px; box-shadow: 0 10px 28px rgba(15,23,42,0.14); width: 208px; display: none; z-index: 30; overflow: hidden; }
+  .avatar-dropdown.open { display: block; }
+  .avatar-dropdown-header { padding: 12px 14px; border-bottom: 1px solid #f0f0f0; }
+  .avatar-dropdown-name { font-size: 12.5px; font-weight: 600; color: #1a1a1a; }
+  .avatar-dropdown-email { font-size: 11px; color: #8a8f98; margin-top: 2px; }
+  .avatar-dropdown-item { display: flex; align-items: center; gap: 9px; padding: 10px 14px; font-size: 12.5px; color: #333; cursor: pointer; }
+  .avatar-dropdown-item:hover { background: #f6f7f9; }
+  .avatar-dropdown-item.danger { color: #c62828; }
+  .avatar-dropdown-divider { border-top: 1px solid #f0f0f0; }
+
+  /* ── Typography system ── */
+  .page-title { font-size: 20px; font-weight: 700; color: #1F3864; letter-spacing: -0.1px; }
+  .page-subtitle { font-size: 12.5px; color: #6b7280; margin-top: 4px; }
+  .page-header-divider { border-bottom: 1px solid #e3e5e9; margin: 14px 0 18px; }
+  .section-title2 { font-size: 14px; font-weight: 700; color: #1F3864; }
+  .label-text { font-size: 12px; font-weight: 500; color: #555b66; }
+  .data-value-text { font-size: 13px; font-weight: 400; color: #1a1a1a; }
+  .muted-text { font-size: 11px; color: #9aa0a8; }
+  .view-only-note { font-size: 11.5px; color: #8a6d1a; background: #FBF3D9; border: 1px solid #E9D28A; padding: 7px 12px; border-radius: 5px; display: inline-block; }
 
   /* ── Pages ── */
   .page { display: none; }
   .page.active { display: block; }
 
-  /* ── Top bar ── */
-  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-  .page-title { font-size: 20px; font-weight: bold; color: #1F3864; }
-  .badge { background: #E2EFDA; color: #375623; font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: bold; }
-  .badge-blue { background: #D9E1F2; color: #1F3864; font-size: 11px; padding: 3px 10px; border-radius: 12px; font-weight: bold; }
+  /* ── Top bar (legacy, still used inside a couple of pages) ── */
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .badge { background: #E7F0E9; color: #2C5233; font-size: 10.5px; padding: 3px 9px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
+  .badge-blue { background: #E1E7F3; color: #1F3864; font-size: 10.5px; padding: 3px 9px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
 
   /* ── Metric cards ── */
-  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
   .cards-3 { grid-template-columns: repeat(3, 1fr); }
-  .card { background: white; border-radius: 8px; padding: 16px; border: 1px solid #e0e0e0; }
-  .card-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
-  .card-value { font-size: 22px; font-weight: bold; color: #1F3864; }
-  .card-sub { font-size: 11px; color: #aaa; margin-top: 4px; }
+  .card { background: white; border-radius: 6px; padding: 14px 16px; border: 1px solid #e3e5e9; }
+  .card-label { font-size: 10.5px; color: #8a8f98; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; font-weight: 600; }
+  .card-value { font-size: 21px; font-weight: 700; color: #1F3864; }
+  .card-sub { font-size: 11px; color: #aab0b8; margin-top: 4px; }
 
   /* ── Panels ── */
-  .panel { background: white; border-radius: 8px; border: 1px solid #e0e0e0; padding: 20px; margin-bottom: 16px; }
-  .panel-title { font-size: 14px; font-weight: bold; color: #1F3864; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; }
+  .panel { background: white; border-radius: 6px; border: 1px solid #e3e5e9; padding: 16px 18px; margin-bottom: 14px; }
+  .panel-title { font-size: 13.5px; font-weight: 700; color: #1F3864; margin-bottom: 14px; padding-bottom: 9px; border-bottom: 1px solid #eef0f2; }
 
   /* ── Forms ── */
   .form-group { display: flex; flex-direction: column; gap: 5px; }
-  .form-group label { font-size: 12px; color: #555; font-weight: bold; }
-  select, input[type="text"], input[type="number"], input[type="password"] { width: 100%; font-size: 13px; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; color: #333; background: white; }
-  select:focus, input:focus { outline: none; border-color: #2E5090; }
+  .form-group label { font-size: 12px; color: #555b66; font-weight: 500; }
+  select, input[type="text"], input[type="number"], input[type="password"] { width: 100%; font-size: 13px; font-family: inherit; border: 1px solid #d7dae0; border-radius: 5px; padding: 7px 10px; color: #1a1a1a; background: white; }
+  select:focus, input:focus { outline: none; border-color: #2E5090; box-shadow: 0 0 0 3px rgba(46,80,144,0.12); }
 
   /* ── Login ── */
   #app-shell { display: none; }
   #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #1F3864; }
-  .login-card { background: white; border-radius: 10px; padding: 36px 32px; width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
-  .login-title { font-size: 20px; font-weight: bold; color: #1F3864; margin-bottom: 4px; }
-  .login-sub { font-size: 12px; color: #888; margin-bottom: 24px; }
-  .login-error { display: none; background: #FFE0E0; border: 1px solid #c62828; color: #c62828; padding: 10px 14px; border-radius: 6px; font-size: 12px; margin-bottom: 14px; }
+  .login-card { background: white; border-radius: 8px; padding: 36px 32px; width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+  .login-title { font-size: 19px; font-weight: 700; color: #1F3864; margin-bottom: 4px; }
+  .login-sub { font-size: 12px; color: #8a8f98; margin-bottom: 24px; }
+  .login-error { display: none; background: #FCE8E6; border: 1px solid #c62828; color: #c62828; padding: 10px 14px; border-radius: 5px; font-size: 12px; margin-bottom: 14px; }
 
   /* ── Buttons ── */
-  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 18px; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: bold; border: 1px solid #ddd; background: white; color: #333; transition: all .15s; }
-  .btn:hover { background: #f5f5f5; }
-  .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 5px; font-size: 12.5px; cursor: pointer; font-weight: 600; border: 1px solid #d7dae0; background: white; color: #333; transition: background .12s, border-color .12s; font-family: inherit; }
+  .btn:hover { background: #f6f7f9; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; }
   .btn-primary { background: #2E5090; border-color: #2E5090; color: white; }
   .btn-primary:hover { background: #1F3864; }
   .btn-gold { background: #C9A84C; border-color: #C9A84C; color: white; }
@@ -74,25 +122,25 @@
 
   /* ── Results ── */
   .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .result-block { background: #f9f9f9; border-radius: 6px; padding: 14px; border: 1px solid #eee; }
-  .result-block-title { font-size: 11px; font-weight: bold; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
-  .result-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid #f0f0f0; }
+  .result-block { background: #FAFAFB; border-radius: 5px; padding: 13px 14px; border: 1px solid #edeef0; }
+  .result-block-title { font-size: 10.5px; font-weight: 700; color: #8a8f98; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 9px; }
+  .result-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid #f0f0f0; }
   .result-row:last-child { border-bottom: none; }
-  .result-label { font-size: 12px; color: #666; }
-  .result-value { font-size: 13px; font-weight: bold; color: #333; }
-  .good  { color: #2e7d32; }
-  .bad   { color: #c62828; }
-  .warn  { color: #e65100; }
+  .result-label { font-size: 12px; color: #6b7280; }
+  .result-value { font-size: 13px; font-weight: 600; color: #1a1a1a; }
+  .good  { color: #1E7A34; }
+  .bad   { color: #C0392B; }
+  .warn  { color: #B7791F; }
 
   /* ── Alerts ── */
-  .alert { padding: 10px 16px; border-radius: 6px; font-size: 13px; display: flex; align-items: center; gap: 10px; margin-bottom: 16px; display: none; }
-  .alert-success { background: #E2EFDA; border: 1px solid #375623; color: #375623; }
-  .alert-danger  { background: #FFE0E0; border: 1px solid #c62828; color: #c62828; }
-  .alert-info    { background: #D9E1F2; border: 1px solid #1F3864; color: #1F3864; }
+  .alert { padding: 9px 15px; border-radius: 5px; font-size: 12.5px; display: flex; align-items: center; gap: 9px; margin-bottom: 14px; display: none; }
+  .alert-success { background: #E7F0E9; border: 1px solid #2C5233; color: #2C5233; }
+  .alert-danger  { background: #FCE8E6; border: 1px solid #c62828; color: #c62828; }
+  .alert-info    { background: #E1E7F3; border: 1px solid #1F3864; color: #1F3864; }
 
   /* ── Tabs ── */
-  .tab-bar { display: flex; gap: 0; margin-bottom: 16px; border-bottom: 2px solid #e0e0e0; }
-  .tab { padding: 8px 16px; font-size: 13px; cursor: pointer; color: #888; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: bold; }
+  .tab-bar { display: flex; gap: 0; margin-bottom: 14px; border-bottom: 1px solid #e3e5e9; }
+  .tab { padding: 8px 15px; font-size: 12.5px; cursor: pointer; color: #8a8f98; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 600; }
   .tab:hover { color: #1F3864; }
   .tab.active { color: #2E5090; border-bottom-color: #2E5090; }
   .tab-content { display: none; }
@@ -100,21 +148,22 @@
 
   /* ── Table ── */
   .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th { text-align: left; padding: 10px 12px; background: #1F3864; color: white; font-size: 12px; }
-  td { padding: 9px 12px; border-bottom: 1px solid #f0f0f0; }
-  tr:hover td { background: #f9f9f9; }
-  .td-prem { color: #2E5090; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; padding: 8px 12px; background: #1F3864; color: white; font-size: 11px; font-weight: 600; letter-spacing: 0.2px; }
+  td { padding: 7px 12px; border-bottom: 1px solid #eef0f2; }
+  tr:nth-child(even) td { background: #FAFAFB; }
+  tr:hover td { background: #F1F3F7; }
+  .td-prem { color: #2E5090; font-weight: 600; }
 
   /* ── Spinner ── */
-  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; }
-  .spinner-dark { border-color: rgba(0,0,0,0.2); border-top-color: #2E5090; }
+  .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; }
+  .spinner-dark { border-color: rgba(0,0,0,0.15); border-top-color: #2E5090; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── Two-col layout ── */
-  .two-col { display: grid; grid-template-columns: 300px 1fr; gap: 16px; }
-  .two-col-wide { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
-  .form-col { display: flex; flex-direction: column; gap: 12px; }
+  .two-col { display: grid; grid-template-columns: 300px 1fr; gap: 14px; }
+  .two-col-wide { display: grid; grid-template-columns: 340px 1fr; gap: 14px; }
+  .form-col { display: flex; flex-direction: column; gap: 11px; }
 </style>
 </head>
 <body>
@@ -133,7 +182,7 @@
       <label>Password</label>
       <input type="password" id="login-password" autocomplete="current-password">
     </div>
-    <button type="submit" class="btn btn-primary" id="btn-login" style="width:100%;justify-content:center">▶ Log in</button>
+    <button type="submit" class="btn btn-primary" id="btn-login" style="width:100%;justify-content:center">Log in</button>
   </form>
 </div>
 
@@ -141,40 +190,160 @@
 
   <!-- ══ SIDEBAR ══ -->
   <div class="sidebar">
-    <div class="logo">
-      <div class="logo-title">AMVS</div>
-      <div class="logo-sub">Ghana Actuarial Modelling<br>& Valuation System</div>
-      <div style="margin-top:8px;font-size:11px;color:rgba(255,255,255,0.4)">Stallion Consultants Ltd</div>
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-title">AMVS</div>
+      <div class="sidebar-logo-sub">Actuarial Modelling &amp; Valuation System</div>
+    </div>
+    <div class="sidebar-user">
+      <div class="sidebar-user-name" id="sidebar-user-name">—</div>
+      <div class="sidebar-user-company" id="sidebar-user-company">—</div>
     </div>
 
-    <div style="padding:8px 0">
-      <div class="nav-item active" onclick="showPage('pricing',this)">
-        <span class="nav-icon">💰</span> Pricing
+    <div class="nav-groups">
+
+      <!-- PRICING -->
+      <div class="nav-group-header" onclick="toggleNavGroup(this)">
+        <span>Pricing</span>
+        <svg class="chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
-      <div class="nav-item" onclick="showPage('ifrs17',this)">
-        <span class="nav-icon">📊</span> IFRS 17
+      <div class="nav-group-items">
+        <div class="nav-item active" onclick="navigateTo('pricing','Pricing','Product Pricing',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          Product Pricing
+        </div>
+        <div class="nav-item" onclick="navigateTo('ratetable','Pricing','Rate Tables',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          Rate Tables
+        </div>
+        <div class="nav-item" onclick="navigateTo('assumptions','Pricing','Assumptions',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          Assumptions
+        </div>
+        <div class="nav-item" onclick="navigateTo('sensitivity','Pricing','Sensitivity Analysis',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Sensitivity Analysis
+        </div>
       </div>
-      <div class="nav-item" onclick="showPage('ratetable',this)">
-        <span class="nav-icon">📋</span> Rate table
+
+      <!-- VALUATION -->
+      <div class="nav-group-header" onclick="toggleNavGroup(this)">
+        <span>Valuation</span>
+        <svg class="chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
-      <div class="nav-item" onclick="window.location='nic_report.html'">
-        <span class="nav-icon">🏛️</span> NIC report
+      <div class="nav-group-items">
+        <div class="nav-item" onclick="navigateTo('ifrs17','Valuation','IFRS 17 — Life',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          IFRS 17 — Life
+        </div>
+        <div class="nav-item" onclick="navigateTo('ifrs17nonlife','Valuation','IFRS 17 — Non-Life',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V7z"/></svg>
+          IFRS 17 — Non-Life
+        </div>
+        <div class="nav-item" onclick="navigateTo('reserving','Valuation','Reserving',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          Reserving
+        </div>
+        <div class="nav-item" onclick="navigateTo('solvency','Valuation','Solvency',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v6c0 5.25 3.75 9.75 9 11 5.25-1.25 9-5.75 9-11V7z"/><polyline points="9 12 11 14 15 10"/></svg>
+          Solvency
+        </div>
       </div>
-      <div class="nav-item" onclick="showPage('reserving',this)">
-        <span class="nav-icon">📐</span> Reserving
+
+      <!-- REPORTS -->
+      <div class="nav-group-header" onclick="toggleNavGroup(this)">
+        <span>Reports</span>
+        <svg class="chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
       </div>
-      <div class="nav-item" onclick="showPage('assumptions',this)">
-        <span class="nav-icon">⚙️</span> Assumptions
+      <div class="nav-group-items">
+        <div class="nav-item" onclick="window.location='nic_report.html'">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg>
+          NIC AVR Report
+        </div>
+        <div class="nav-item" onclick="navigateTo('financials','Reports','Financial Statements',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>
+          Financial Statements
+        </div>
+        <div class="nav-item" onclick="navigateTo('journalentries','Reports','Journal Entries',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+          Journal Entries
+        </div>
+        <div class="nav-item" onclick="navigateTo('exportcentre','Reports','Export Centre',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Export Centre
+        </div>
+      </div>
+
+      <!-- ADMINISTRATION (admin-only) -->
+      <div id="nav-group-admin-header" class="nav-group-header" onclick="toggleNavGroup(this)" style="display:none">
+        <span>Administration</span>
+        <svg class="chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+      <div id="nav-group-admin-items" class="nav-group-items" style="display:none">
+        <div class="nav-item" onclick="navigateTo('clientmgmt','Administration','Client Management',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          Client Management
+        </div>
+        <div class="nav-item" onclick="navigateTo('usermgmt','Administration','User Management',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          User Management
+        </div>
+        <div class="nav-item" onclick="navigateTo('assumptionsets','Administration','Assumption Sets',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          Assumption Sets
+        </div>
+        <div class="nav-item" onclick="navigateTo('audittrail','Administration','Audit Trail',this)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Audit Trail
+        </div>
       </div>
     </div>
 
     <div class="sidebar-footer">
       <div><span class="api-dot" id="api-dot"></span><span id="api-status">Checking API...</span></div>
+      <div class="sidebar-version">AMVS v1.0</div>
       <div style="margin-top:4px; cursor:pointer; text-decoration:underline; text-decoration-style:dotted;"
            id="api-target" onclick="toggleAPITarget()"
            title="Click to switch between the Railway deployment and localhost (local dev)"></div>
     </div>
   </div>
+
+  <!-- ══ CONTENT AREA ══ -->
+  <div class="content-area">
+
+    <!-- ══ HEADER BAR ══ -->
+    <div class="app-header">
+      <div class="breadcrumb" id="header-breadcrumb"><strong>Pricing</strong><span class="breadcrumb-sep">/</span>Product Pricing</div>
+      <div class="header-actions">
+        <div class="header-icon-btn" title="Notifications" onclick="alert('No new notifications.')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </div>
+        <div class="header-icon-btn" title="Help" onclick="alert('AMVS — Ghana Actuarial Modelling &amp; Valuation System.\nContact Stallion Consultants Ltd for support.')">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="avatar-wrap">
+          <div class="avatar-circle" id="header-avatar" onclick="toggleAvatarDropdown()">--</div>
+          <div class="avatar-dropdown" id="avatar-dropdown">
+            <div class="avatar-dropdown-header">
+              <div class="avatar-dropdown-name" id="dropdown-user-name">—</div>
+              <div class="avatar-dropdown-email" id="dropdown-user-email">—</div>
+            </div>
+            <div class="avatar-dropdown-item" onclick="alert('Profile management is coming soon.')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              Profile
+            </div>
+            <div class="avatar-dropdown-item" onclick="alert('Password change is coming soon.')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+              Change Password
+            </div>
+            <div class="avatar-dropdown-divider"></div>
+            <div class="avatar-dropdown-item danger" onclick="logout()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              Logout
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
   <!-- ══ MAIN ══ -->
   <div class="main">
@@ -182,13 +351,17 @@
     <!-- ── PRICING PAGE — comprehensive product pricing platform (Part 4) ── -->
     <div class="page active" id="page-pricing">
       <div class="topbar">
-        <div class="page-title">⚡ Actuarial Pricing Platform</div>
+        <div>
+          <div class="page-title">Product Pricing</div>
+          <div class="page-subtitle">Build any product, price it against the current assumptions basis, and review cash flows, reserves, and profit signature.</div>
+        </div>
         <span class="badge-blue">Basis: <span id="pp-basis-badge">Ghana Market Defaults</span></span>
       </div>
+      <div class="page-header-divider"></div>
 
       <!-- SECTION 1: Product definition -->
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">1️⃣ Product definition</div>
+        <div class="panel-title">1⃣ Product definition</div>
         <div style="display:flex;flex-wrap:wrap;gap:16px">
           <div class="form-group" style="flex:1;min-width:200px">
             <label>Product name</label>
@@ -259,7 +432,7 @@
 
       <!-- SECTION 2: Benefit riders -->
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">2️⃣ Benefit riders</div>
+        <div class="panel-title">2⃣ Benefit riders</div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Rider name</th><th>Benefit type</th><th>Benefit amount (GHS)</th><th>Rider term (years)</th><th>Waiting period (months)</th><th></th></tr></thead>
@@ -272,7 +445,7 @@
 
       <!-- SECTION 3: Dependants -->
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">3️⃣ Dependants <span style="font-weight:normal;color:#888;font-size:12px">— up to 3</span></div>
+        <div class="panel-title">3⃣ Dependants <span style="font-weight:normal;color:#888;font-size:12px">— up to 3</span></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Relationship</th><th>Age</th><th>Rider benefit overrides (GHS, blank = full benefit)</th><th></th></tr></thead>
@@ -280,15 +453,15 @@
           </table>
         </div>
         <button class="btn btn-primary" style="margin-top:10px" onclick="addDependantRow()">+ Add dependant</button>
-        <div id="pp-dependant-warning" style="display:none;color:#a33;font-size:13px;margin-top:8px">⚠ Maximum 3 dependants supported.</div>
+        <div id="pp-dependant-warning" style="display:none;color:#a33;font-size:13px;margin-top:8px">Maximum 3 dependants supported.</div>
       </div>
 
-      <button class="btn btn-gold" onclick="runCustomPricing()" id="pp-btn-run" style="font-size:15px;padding:14px 30px">▶ Run Pricing</button>
+      <button class="btn btn-gold" onclick="runCustomPricing()" id="pp-btn-run" style="font-size:15px;padding:14px 30px">Run Pricing</button>
       <span id="pp-run-status" style="font-size:13px;margin-left:12px"></span>
 
       <!-- SECTION 4: Results -->
       <div class="panel" id="pp-results-panel" style="display:none;margin-top:20px">
-        <div class="panel-title">📊 Results <span style="font-weight:normal;color:#888;font-size:12px">— basis: <span id="pp-results-basis"></span></span></div>
+        <div class="panel-title">Results <span style="font-weight:normal;color:#888;font-size:12px">— basis: <span id="pp-results-basis"></span></span></div>
         <div class="tab-bar">
           <div class="tab pp-tab active" data-tab="summary" onclick="showPricingTab('summary',this)">Premium Summary</div>
           <div class="tab pp-tab" data-tab="cashflow" onclick="showPricingTab('cashflow',this)">Cash Flow</div>
@@ -306,7 +479,7 @@
             <div class="card"><div class="card-label">Single premium equiv.</div><div class="card-value" id="pp-c-single">—</div><div class="card-sub">PV of future premiums</div></div>
             <div class="card"><div class="card-label">Profit margin achieved</div><div class="card-value" id="pp-c-margin">—</div><div class="card-sub">Target basis margin</div></div>
           </div>
-          <div class="alert alert-danger" id="pp-alert-onerous" style="display:none">⚠️ Contract is ONEROUS — expected loss must be recognised immediately in P&L under IFRS 17.</div>
+          <div class="alert alert-danger" id="pp-alert-onerous" style="display:none">Contract is ONEROUS — expected loss must be recognised immediately in P&L under IFRS 17.</div>
           <div class="results-grid">
             <div class="result-block">
               <div class="result-block-title">IFRS 17 at inception</div>
@@ -361,7 +534,7 @@
 
         <!-- TAB 5: Rate table -->
         <div class="tab-content pp-tab-content" id="pp-tab-ratetable">
-          <button class="btn btn-gold" onclick="runCustomRateTable()" id="pp-btn-ratetable">▶ Generate rate table (ages 18–70)</button>
+          <button class="btn btn-gold" onclick="runCustomRateTable()" id="pp-btn-ratetable">Generate rate table (ages 18–70)</button>
           <span id="pp-ratetable-status" style="font-size:13px;margin-left:10px"></span>
           <canvas id="pp-ratetable-chart" height="90" style="margin-top:16px"></canvas>
           <div class="table-wrap" style="margin-top:16px">
@@ -374,7 +547,7 @@
 
         <!-- TAB 6: Sensitivity analysis -->
         <div class="tab-content pp-tab-content" id="pp-tab-sensitivity">
-          <button class="btn btn-gold" onclick="runCustomSensitivity()" id="pp-btn-sensitivity">▶ Run sensitivity analysis</button>
+          <button class="btn btn-gold" onclick="runCustomSensitivity()" id="pp-btn-sensitivity">Run sensitivity analysis</button>
           <span id="pp-sensitivity-status" style="font-size:13px;margin-left:10px"></span>
           <div class="table-wrap" style="margin-top:16px">
             <table>
@@ -385,8 +558,8 @@
         </div>
 
         <div style="margin-top:20px;display:flex;gap:10px">
-          <button class="btn btn-gold" onclick="downloadCustomPricingExcel()" id="pp-btn-download-excel">⬇ Download Excel</button>
-          <button class="btn btn-primary" onclick="generateCustomAVRNote()" id="pp-btn-avr-note">📄 Generate AVR Note</button>
+          <button class="btn btn-gold" onclick="downloadCustomPricingExcel()" id="pp-btn-download-excel">Download Excel</button>
+          <button class="btn btn-primary" onclick="generateCustomAVRNote()" id="pp-btn-avr-note">Generate AVR Note</button>
         </div>
       </div>
     </div>
@@ -394,13 +567,17 @@
     <!-- ── IFRS 17 PAGE ── -->
     <div class="page" id="page-ifrs17">
       <div class="topbar">
-        <div class="page-title">📊 IFRS 17 Valuation</div>
-        <span class="badge-blue">Annual & Quarterly</span>
+        <div>
+          <div class="page-title">IFRS 17 — Life</div>
+          <div class="page-subtitle">General Measurement Model (GMM) valuation — LRC, LIC, CSM roll-forward, and solvency for life products.</div>
+        </div>
+        <span class="badge-blue">Annual &amp; Quarterly</span>
       </div>
+      <div class="page-header-divider"></div>
 
       <div class="two-col">
         <div class="panel">
-          <div class="panel-title">🏢 Valuation inputs</div>
+          <div class="panel-title">Valuation inputs</div>
           <div class="form-col">
             <div class="form-group"><label>Company name</label><input type="text" id="i-company" value="Quality Insurance PLC"></div>
             <div class="form-group"><label>Reporting period</label><input type="text" id="i-period" value="FY2025"></div>
@@ -421,12 +598,12 @@
                 <option value="3">Tier 3 — Premium</option>
               </select>
             </div>
-            <button class="btn btn-primary" onclick="runIFRS17()" id="btn-ifrs">▶ Run valuation</button>
+            <button class="btn btn-primary" onclick="runIFRS17()" id="btn-ifrs">Run valuation</button>
           </div>
         </div>
 
         <div>
-          <button class="btn btn-gold" onclick="downloadIFRS17Excel()" id="btn-ifrs-download" style="display:none;margin-bottom:16px">⬇ Download Excel</button>
+          <button class="btn btn-gold" onclick="downloadIFRS17Excel()" id="btn-ifrs-download" style="display:none;margin-bottom:16px">Download Excel</button>
           <div class="cards cards-3" style="margin-bottom:16px">
             <div class="card"><div class="card-label">Total liabilities</div><div class="card-value" id="i-totliab">—</div><div class="card-sub">GHS</div></div>
             <div class="card"><div class="card-label">Insurance revenue</div><div class="card-value" id="i-rev">—</div><div class="card-sub">GHS (period)</div></div>
@@ -434,7 +611,7 @@
           </div>
 
           <div class="panel">
-            <div class="panel-title">📋 Detailed results</div>
+            <div class="panel-title">Detailed results</div>
             <div class="tab-bar">
               <div class="tab active" onclick="showTab('lrc',this)">LRC</div>
               <div class="tab" onclick="showTab('lic',this)">LIC</div>
@@ -502,12 +679,16 @@
     <!-- ── RATE TABLE PAGE ── -->
     <div class="page" id="page-ratetable">
       <div class="topbar">
-        <div class="page-title">📋 Premium Rate Table</div>
+        <div>
+          <div class="page-title">Rate Tables</div>
+          <div class="page-subtitle">Generate a full premium rate table across ages 18–70 for a given product tier.</div>
+        </div>
         <span class="badge">All ages 18–70</span>
       </div>
+      <div class="page-header-divider"></div>
 
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">⚙️ Table settings</div>
+        <div class="panel-title">Table settings</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
           <div class="form-group" style="flex:0 0 200px">
             <label>Product tier</label>
@@ -532,16 +713,16 @@
             <label>To age</label>
             <input type="number" id="rt-to" value="70" min="18" max="70">
           </div>
-          <button class="btn btn-gold" onclick="runRateTable()" id="btn-rt">▶ Generate rate table</button>
+          <button class="btn btn-gold" onclick="runRateTable()" id="btn-rt">Generate rate table</button>
         </div>
         <div style="margin-top:10px;font-size:12px;color:#888">
-          ⏱ Note: Generating ages 18–70 takes about 30–60 seconds. The engine is solving for the premium at each age.
+          Note: Generating ages 18–70 takes about 30–60 seconds. The engine is solving for the premium at each age.
         </div>
       </div>
 
       <div class="panel">
         <div class="panel-title">
-          📊 Premium rates
+          Premium rates
           <span id="rt-info" style="font-size:12px;color:#888;font-weight:normal;margin-left:12px"></span>
         </div>
         <div class="table-wrap">
@@ -565,53 +746,31 @@
       </div>
     </div>
 
-    <!-- ── NIC REPORT PAGE ── -->
-    <div class="page" id="page-nic">
-      <div class="topbar">
-        <div class="page-title">🏛️ NIC Regulatory Report</div>
-        <span class="badge">GIRBC 2025</span>
-      </div>
-      <div class="panel">
-        <div class="panel-title">Coming next</div>
-        <p style="color:#666;font-size:13px;line-height:1.8;margin-bottom:16px">
-          The NIC report module will generate the complete quarterly and annual regulatory submission package in the exact format required by the National Insurance Commission of Ghana.
-        </p>
-        <p style="color:#666;font-size:13px;line-height:1.8;margin-bottom:16px">
-          <strong>What it will produce:</strong><br>
-          ✓ IFRS 17 balance sheet disclosures<br>
-          ✓ Insurance service result (P&L note)<br>
-          ✓ CSM roll-forward table<br>
-          ✓ LRC and LIC breakdown<br>
-          ✓ Capital Adequacy Ratio (CAR)<br>
-          ✓ GIRBC solvency worksheets<br>
-          ✓ Actuarial certificate attachment<br>
-          ✓ Quarterly submission package (Q1–Q4)
-        </p>
-        <p style="color:#666;font-size:13px">Run an IFRS 17 valuation first, then return here to generate the NIC report.</p>
-      </div>
-    </div>
-
     <!-- ── NON-LIFE RESERVING PAGE ── -->
     <div class="page" id="page-reserving">
       <div class="topbar">
-        <div class="page-title">📐 Non-Life Reserving — NIC Summary</div>
+        <div>
+          <div class="page-title">Reserving</div>
+          <div class="page-subtitle">Chain ladder and Bornhuetter-Ferguson IBNR, by class of business — run on PIC's own data or an uploaded portfolio.</div>
+        </div>
         <span class="badge">Provident Insurance (PIC) — Motor / Fire / Accident / Others</span>
       </div>
+      <div class="page-header-divider"></div>
 
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">⚙️ Source data</div>
+        <div class="panel-title">Source data</div>
         <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
           Reads PIC's own claims triangles, outstanding claims register, UPR/DAC, and ULAE
           workbooks directly and runs Chain Ladder IBNR for each class of business.
         </p>
-        <button class="btn btn-gold" onclick="runNicSummary()" id="btn-nic-summary">▶ Load NIC summary</button>
-        <button class="btn btn-primary" onclick="downloadReservingExcel()" id="btn-reserving-download" style="display:none;margin-left:8px">⬇ Download Excel</button>
-        <button class="btn btn-primary" onclick="downloadNonlifeAvrWord()" id="btn-reserving-avr-word" style="display:none;margin-left:8px">⬇ Download AVR Report</button>
+        <button class="btn btn-gold" onclick="runNicSummary()" id="btn-nic-summary">Load NIC summary</button>
+        <button class="btn btn-primary" onclick="downloadReservingExcel()" id="btn-reserving-download" style="display:none;margin-left:8px">Download Excel</button>
+        <button class="btn btn-primary" onclick="downloadNonlifeAvrWord()" id="btn-reserving-avr-word" style="display:none;margin-left:8px">Download AVR Report</button>
         <span id="nic-summary-info" style="font-size:12px;color:#888;margin-left:12px"></span>
       </div>
 
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">📤 Or upload your own client data</div>
+        <div class="panel-title">Or upload your own client data</div>
         <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
           Upload the 4 required workbooks — named exactly as PIC's own workbook template
           expects (IBNR Projection, Outstanding Claims/Final Data, UPR &amp; DAC, ULAE) —
@@ -631,13 +790,13 @@
             <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Valuation date / period</label>
             <input type="text" id="upload-valuation-date" value="FY2025" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;width:110px">
           </div>
-          <button class="btn btn-gold" onclick="runUploadReserving()" id="btn-upload-run">▶ Run Reserving</button>
+          <button class="btn btn-gold" onclick="runUploadReserving()" id="btn-upload-run">Run Reserving</button>
         </div>
         <div id="upload-files-info" style="font-size:12px;color:#888"></div>
         <div id="upload-status" style="font-size:13px;margin-top:8px"></div>
         <div id="upload-results-actions" style="display:none;margin-top:12px">
-          <button class="btn btn-primary" onclick="downloadUploadExcel()" id="btn-upload-download-excel">⬇ Download Excel</button>
-          <button class="btn btn-primary" onclick="downloadUploadWord()" id="btn-upload-download-word" style="margin-left:8px">⬇ Download AVR Report</button>
+          <button class="btn btn-primary" onclick="downloadUploadExcel()" id="btn-upload-download-excel">Download Excel</button>
+          <button class="btn btn-primary" onclick="downloadUploadWord()" id="btn-upload-download-word" style="margin-left:8px">Download AVR Report</button>
         </div>
       </div>
 
@@ -694,12 +853,16 @@
     <!-- ── ASSUMPTIONS PAGE ── -->
     <div class="page" id="page-assumptions">
       <div class="topbar">
-        <div class="page-title">⚙️ Assumptions</div>
+        <div>
+          <div class="page-title">Assumptions</div>
+          <div class="page-subtitle">Every editable pricing and valuation assumption — mortality, lapses, commissions, expenses, and economic basis.</div>
+        </div>
         <span class="badge-blue" id="am-basis-badge">Ghana Market Defaults</span>
       </div>
+      <div class="page-header-divider"></div>
 
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">💀 Mortality</div>
+        <div class="panel-title">Mortality</div>
         <div style="display:flex;flex-wrap:wrap;gap:16px">
           <div style="min-width:220px;flex:1">
             <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Mortality table</label>
@@ -728,7 +891,7 @@
       </div>
 
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">📉 Lapse assumptions <span style="font-weight:normal;color:#888;font-size:12px">— annual rate by policy year</span></div>
+        <div class="panel-title">Lapse assumptions <span style="font-weight:normal;color:#888;font-size:12px">— annual rate by policy year</span></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Policy year</th><th>Annual lapse rate (%)</th><th></th></tr></thead>
@@ -737,12 +900,12 @@
         </div>
         <div style="margin-top:10px">
           <button class="btn btn-primary" onclick="addAssumptionRow('am-lapse-body', 'lapse')">+ Add year</button>
-          <button class="btn" onclick="resetSectionToGhanaDefaults('lapse')">↺ Reset to Ghana defaults</button>
+          <button class="btn" onclick="resetSectionToGhanaDefaults('lapse')">Reset to Ghana defaults</button>
         </div>
       </div>
 
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">💼 Commission assumptions <span style="font-weight:normal;color:#888;font-size:12px">— rate by policy year</span></div>
+        <div class="panel-title">Commission assumptions <span style="font-weight:normal;color:#888;font-size:12px">— rate by policy year</span></div>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Policy year</th><th>Commission rate (%)</th><th></th></tr></thead>
@@ -751,13 +914,13 @@
         </div>
         <div style="margin-top:10px">
           <button class="btn btn-primary" onclick="addAssumptionRow('am-commission-body', 'commission')">+ Add year</button>
-          <button class="btn" onclick="resetSectionToGhanaDefaults('commission')">↺ Reset to Ghana defaults</button>
+          <button class="btn" onclick="resetSectionToGhanaDefaults('commission')">Reset to Ghana defaults</button>
         </div>
       </div>
 
       <div class="results-grid">
         <div class="panel">
-          <div class="panel-title">💸 Expense assumptions</div>
+          <div class="panel-title">Expense assumptions</div>
           <div class="result-row"><span class="result-label">Policy fee (GHS/month)</span><input type="number" id="am-exp-policy-fee" step="0.01" style="width:120px"></div>
           <div class="result-row"><span class="result-label">Acquisition cost (GHS, one-time)</span><input type="number" id="am-exp-acquisition" step="0.01" style="width:120px"></div>
           <div class="result-row"><span class="result-label">Renewal expense (GHS/year)</span><input type="number" id="am-exp-renewal" step="0.01" style="width:120px"></div>
@@ -772,7 +935,7 @@
         </div>
 
         <div class="panel">
-          <div class="panel-title">💹 Economic assumptions</div>
+          <div class="panel-title">Economic assumptions</div>
           <div class="result-row"><span class="result-label">Valuation interest rate (% p.a.)</span><input type="number" id="am-eco-valuation-rate" step="0.1" style="width:120px"></div>
           <div class="result-row"><span class="result-label">Investment return (% p.a.)</span><input type="number" id="am-eco-investment-return" step="0.1" style="width:120px"></div>
           <div class="result-row"><span class="result-label">Locked-in rate (IFRS 17 CSM, % p.a.)</span><input type="number" id="am-eco-locked-in-rate" step="0.1" style="width:120px"></div>
@@ -780,7 +943,7 @@
         </div>
 
         <div class="panel">
-          <div class="panel-title">🛡️ Risk adjustment</div>
+          <div class="panel-title">Risk adjustment</div>
           <div class="result-row">
             <span class="result-label">Method</span>
             <select id="am-ra-method" style="width:180px">
@@ -794,7 +957,7 @@
         </div>
 
         <div class="panel">
-          <div class="panel-title">🎯 Pricing targets</div>
+          <div class="panel-title">Pricing targets</div>
           <div class="result-row">
             <span class="result-label">Target profit margin: <span id="am-price-margin-display">15%</span></span>
             <div style="display:flex;gap:6px;align-items:center;width:180px">
@@ -823,24 +986,260 @@
       </div>
 
       <div class="panel" style="margin-top:4px">
-        <div class="panel-title">💾 Save / Load this basis</div>
+        <div class="panel-title">Save / Load this basis</div>
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end">
           <div style="flex:1;min-width:220px">
             <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Name this assumption set</label>
             <input type="text" id="am-save-name" placeholder="e.g. PIC Pricing Basis 2025">
           </div>
-          <button class="btn btn-gold" onclick="saveAssumptionSet()" id="am-btn-save">💾 Save assumptions</button>
+          <button class="btn btn-gold" onclick="saveAssumptionSet()" id="am-btn-save">Save assumptions</button>
           <div style="flex:1;min-width:220px">
             <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Load a saved set</label>
             <select id="am-load-select"><option value="">— Select a saved set —</option></select>
           </div>
-          <button class="btn btn-primary" onclick="loadSelectedAssumptionSet()" id="am-btn-load">📂 Load assumptions</button>
-          <button class="btn" onclick="resetAllToGhanaDefaults()" id="am-btn-reset">↺ Reset to Ghana defaults</button>
+          <button class="btn btn-primary" onclick="loadSelectedAssumptionSet()" id="am-btn-load">Load assumptions</button>
+          <button class="btn" onclick="resetAllToGhanaDefaults()" id="am-btn-reset">Reset to Ghana defaults</button>
         </div>
         <div id="am-status" style="font-size:13px;margin-top:10px"></div>
       </div>
     </div>
 
+    <!-- ── SENSITIVITY ANALYSIS PAGE (jumps to Pricing platform's Sensitivity tab) ── -->
+    <div class="page" id="page-sensitivity">
+      <div class="page-title">Sensitivity Analysis</div>
+      <div class="page-subtitle">Stress test any product's premium against one assumption at a time.</div>
+      <div class="page-header-divider"></div>
+      <div class="panel">
+        <p class="data-value-text" style="line-height:1.7;margin-bottom:14px">
+          Sensitivity analysis runs against whatever product is currently defined on the Product Pricing page.
+          Define a product there, run pricing once, then open its Sensitivity tab — or jump straight there now.
+        </p>
+        <button class="btn btn-gold" onclick="navigateTo('pricing','Pricing','Product Pricing',document.querySelector('.nav-item'));setTimeout(()=>{const t=document.querySelector('[data-tab=\'sensitivity\']');if(t)t.click();},50)">Go to Product Pricing → Sensitivity</button>
+      </div>
+    </div>
+
+    <!-- ── IFRS 17 — NON-LIFE PAGE ── -->
+    <div class="page" id="page-ifrs17nonlife">
+      <div class="page-title">IFRS 17 — Non-Life</div>
+      <div class="page-subtitle">Premium Allocation Approach (PAA) valuation for non-life classes of business.</div>
+      <div class="page-header-divider"></div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">Valuation inputs</div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+          <div class="form-group" style="width:160px"><label>Client</label>
+            <select id="nl-client-id"><option value="pic">Provident Insurance (PIC)</option></select>
+          </div>
+          <div class="form-group" style="width:140px"><label>Period</label><input type="text" id="nl-period" value="FY2025"></div>
+          <button class="btn btn-gold" onclick="runIfrs17NonLife()" id="btn-nl-run">Run PAA valuation</button>
+        </div>
+      </div>
+
+      <div id="nl-results" style="display:none">
+        <div class="cards" style="margin-bottom:14px">
+          <div class="card"><div class="card-label">Total Reserve (Gross)</div><div class="card-value" id="nl-c-total">—</div><div class="card-sub">GHS</div></div>
+          <div class="card"><div class="card-label">Total LRC (Gross)</div><div class="card-value" id="nl-c-lrc">—</div><div class="card-sub">GHS</div></div>
+          <div class="card"><div class="card-label">Total LIC (Gross)</div><div class="card-value" id="nl-c-lic">—</div><div class="card-sub">GHS</div></div>
+          <div class="card"><div class="card-label">Onerous classes</div><div class="card-value" id="nl-c-onerous">—</div><div class="card-sub">Of all classes</div></div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">PAA statements by class of business (Gross)</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Class</th><th>IBNR</th><th>OCR</th><th>Effect of discounting</th><th>Risk adjustment</th><th>LIC</th><th>UPR</th><th>DAC</th><th>LRC</th><th>Total reserve</th><th>Onerous?</th></tr></thead>
+              <tbody id="nl-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SOLVENCY PAGE ── -->
+    <div class="page" id="page-solvency">
+      <div class="page-title">Solvency</div>
+      <div class="page-subtitle">Capital adequacy ratio (CAR) and GIRBC risk module capital charges.</div>
+      <div class="page-header-divider"></div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">Valuation inputs</div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+          <div class="form-group" style="width:200px"><label>Company name</label><input type="text" id="sv-company" value="Quality Insurance PLC"></div>
+          <div class="form-group" style="width:140px"><label>In-force policies</label><input type="number" id="sv-count" value="500" min="1"></div>
+          <div class="form-group" style="width:110px"><label>Entry age</label><input type="number" id="sv-age" value="35" min="18" max="70"></div>
+          <div class="form-group" style="width:150px"><label>Product tier</label>
+            <select id="sv-tier"><option value="1">Tier 1 — Basic</option><option value="2">Tier 2 — Standard</option><option value="3">Tier 3 — Premium</option></select>
+          </div>
+          <button class="btn btn-gold" onclick="runSolvency()" id="btn-sv-run">Run solvency check</button>
+        </div>
+      </div>
+
+      <div id="sv-results" style="display:none">
+        <div class="alert alert-success" id="sv-alert-ok"></div>
+        <div class="alert alert-danger" id="sv-alert-breach"></div>
+        <div class="results-grid">
+          <div class="result-block">
+            <div class="result-block-title">Capital adequacy ratio</div>
+            <div class="result-row"><span class="result-label">Available capital</span><span class="result-value" id="sv-avcap">—</span></div>
+            <div class="result-row"><span class="result-label">Required capital (SCR)</span><span class="result-value" id="sv-reqcap">—</span></div>
+            <div class="result-row"><span class="result-label">Surplus / (deficit)</span><span class="result-value" id="sv-surplus">—</span></div>
+            <div class="result-row"><span class="result-label">Capital adequacy ratio</span><span class="result-value" id="sv-car" style="font-size:15px">—</span></div>
+            <div class="result-row"><span class="result-label">Solvency status</span><span class="result-value" id="sv-status">—</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── FINANCIAL STATEMENTS PAGE ── -->
+    <div class="page" id="page-financials">
+      <div class="page-title">Financial Statements</div>
+      <div class="page-subtitle">IFRS 17 insurance service result — insurance revenue, expenses, and comprehensive income.</div>
+      <div class="page-header-divider"></div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">Valuation inputs</div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+          <div class="form-group" style="width:200px"><label>Company name</label><input type="text" id="fs-company" value="Quality Insurance PLC"></div>
+          <div class="form-group" style="width:140px"><label>In-force policies</label><input type="number" id="fs-count" value="500" min="1"></div>
+          <div class="form-group" style="width:110px"><label>Entry age</label><input type="number" id="fs-age" value="35" min="18" max="70"></div>
+          <button class="btn btn-gold" onclick="runFinancialStatements()" id="btn-fs-run">Generate statements</button>
+        </div>
+      </div>
+
+      <div id="fs-results" style="display:none" class="results-grid">
+        <div class="result-block">
+          <div class="result-block-title">Insurance revenue and expenses</div>
+          <div class="result-row"><span class="result-label">Insurance revenue</span><span class="result-value good" id="fs-rev">—</span></div>
+          <div class="result-row"><span class="result-label">Insurance service expenses</span><span class="result-value bad" id="fs-exp">—</span></div>
+          <div class="result-row"><span class="result-label">Insurance service result</span><span class="result-value good" id="fs-isr">—</span></div>
+        </div>
+        <div class="result-block">
+          <div class="result-block-title">Balance sheet (IFRS 17 liabilities)</div>
+          <div class="result-row"><span class="result-label">Total liabilities (GHS)</span><span class="result-value" id="fs-liab">—</span></div>
+          <div class="result-row"><span class="result-label">Total liabilities (USD)</span><span class="result-value" id="fs-liabusd">—</span></div>
+          <div class="result-row"><span class="result-label">Capital adequacy ratio</span><span class="result-value" id="fs-car">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── JOURNAL ENTRIES PAGE ── -->
+    <div class="page" id="page-journalentries">
+      <div class="page-title">Journal Entries</div>
+      <div class="page-subtitle">Double-entry postings behind the non-life PAA statements, by class of business.</div>
+      <div class="page-header-divider"></div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">Statement inputs</div>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
+          <div class="form-group" style="width:160px"><label>Client</label>
+            <select id="je-client-id"><option value="pic">Provident Insurance (PIC)</option></select>
+          </div>
+          <div class="form-group" style="width:140px"><label>Period</label><input type="text" id="je-period" value="FY2025"></div>
+          <button class="btn btn-gold" onclick="runJournalEntries()" id="btn-je-run">Load journal entries</button>
+        </div>
+        <div class="muted-text" style="margin-top:8px" id="je-info"></div>
+      </div>
+
+      <div class="panel" id="je-panel" style="display:none">
+        <div class="panel-title">Journal entries</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Date</th><th>Account code</th><th>Account name</th><th>Debit</th><th>Credit</th><th>Class</th><th>Basis</th><th>Narrative</th></tr></thead>
+            <tbody id="je-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── EXPORT CENTRE PAGE ── -->
+    <div class="page" id="page-exportcentre">
+      <div class="page-title">Export Centre</div>
+      <div class="page-subtitle">Every downloadable Excel and Word output AMVS produces, in one place.</div>
+      <div class="page-header-divider"></div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">Non-life reserving (PIC)</div>
+        <p class="data-value-text" style="margin-bottom:12px">Excel workbook and Word AVR report from the Reserving page's NIC summary.</p>
+        <button class="btn btn-primary" onclick="showPage('reserving',document.querySelector('.nav-item'))">Go to Reserving page</button>
+      </div>
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">Life IFRS 17 (GMM)</div>
+        <p class="data-value-text" style="margin-bottom:12px">Excel workbook from the IFRS 17 — Life page's valuation results.</p>
+        <button class="btn btn-primary" onclick="navigateTo('ifrs17','Valuation','IFRS 17 — Life',document.querySelector('.nav-item'))">Go to IFRS 17 — Life page</button>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Custom product pricing</div>
+        <p class="data-value-text" style="margin-bottom:12px">Excel workbook and AVR product note from the Product Pricing page's results.</p>
+        <button class="btn btn-primary" onclick="navigateTo('pricing','Pricing','Product Pricing',document.querySelector('.nav-item'))">Go to Product Pricing page</button>
+      </div>
+    </div>
+
+    <!-- ── ADMINISTRATION: CLIENT MANAGEMENT ── -->
+    <div class="page" id="page-clientmgmt">
+      <div class="page-title">Client Management</div>
+      <div class="page-subtitle">Insurers configured on this AMVS instance.</div>
+      <div class="page-header-divider"></div>
+      <div style="margin-bottom:14px"><span class="view-only-note">View only — add/edit is not yet built</span></div>
+      <div class="panel">
+        <div class="panel-title">Configured clients</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Client ID</th><th>Name</th><th>Currency</th></tr></thead>
+            <tbody id="admin-clients-body"><tr><td colspan="3" class="muted-text" style="text-align:center;padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ADMINISTRATION: USER MANAGEMENT ── -->
+    <div class="page" id="page-usermgmt">
+      <div class="page-title">User Management</div>
+      <div class="page-subtitle">Everyone with a login to this AMVS instance.</div>
+      <div class="page-header-divider"></div>
+      <div style="margin-bottom:14px"><span class="view-only-note">View only — add/edit is not yet built</span></div>
+      <div class="panel">
+        <div class="panel-title">Users</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Email</th><th>Company</th><th>Role</th><th>Client</th><th>Active</th><th>Created</th></tr></thead>
+            <tbody id="admin-users-body"><tr><td colspan="6" class="muted-text" style="text-align:center;padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ADMINISTRATION: ASSUMPTION SETS ── -->
+    <div class="page" id="page-assumptionsets">
+      <div class="page-title">Assumption Sets</div>
+      <div class="page-subtitle">Every named assumption basis saved by any user.</div>
+      <div class="page-header-divider"></div>
+      <div class="panel">
+        <div class="panel-title">Saved assumption sets</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Description</th><th>Client</th><th>Created</th></tr></thead>
+            <tbody id="admin-assumptionsets-body"><tr><td colspan="4" class="muted-text" style="text-align:center;padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ADMINISTRATION: AUDIT TRAIL ── -->
+    <div class="page" id="page-audittrail">
+      <div class="page-title">Audit Trail</div>
+      <div class="page-subtitle">Every valuation run executed through the API, most recent first.</div>
+      <div class="page-header-divider"></div>
+      <div class="panel">
+        <div class="panel-title">Valuation runs <span class="muted-text" id="audit-count" style="font-weight:normal"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Run ID</th><th>User</th><th>Client</th><th>Run type</th><th>Date</th></tr></thead>
+            <tbody id="admin-audittrail-body"><tr><td colspan="5" class="muted-text" style="text-align:center;padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
   </div>
 </div>
 
@@ -925,6 +1324,55 @@ function showLogin(message) {
 function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = 'grid';
+  loadCurrentUser();
+}
+
+let CURRENT_USER = null;
+
+function _initials(email) {
+  const namePart = (email || '').split('@')[0];
+  const pieces = namePart.split(/[._-]/).filter(Boolean);
+  if (pieces.length >= 2) return (pieces[0][0] + pieces[1][0]).toUpperCase();
+  return namePart.slice(0, 2).toUpperCase();
+}
+
+async function loadCurrentUser() {
+  try {
+    const r = await apiFetch('/auth/me');
+    const u = await r.json();
+    CURRENT_USER = u;
+    document.getElementById('sidebar-user-name').textContent = u.email;
+    document.getElementById('sidebar-user-company').textContent = u.company_name;
+    document.getElementById('header-avatar').textContent = _initials(u.email);
+    document.getElementById('dropdown-user-name').textContent = u.company_name;
+    document.getElementById('dropdown-user-email').textContent = u.email;
+    if (u.role === 'admin') {
+      document.getElementById('nav-group-admin-header').style.display = 'flex';
+      document.getElementById('nav-group-admin-items').style.display = 'block';
+    }
+  } catch (e) {
+    // Non-fatal — the sidebar/header just show placeholders if this fails.
+  }
+}
+
+function logout() {
+  AUTH_TOKEN = null;
+  CURRENT_USER = null;
+  document.getElementById('avatar-dropdown').classList.remove('open');
+  showLogin();
+}
+
+function toggleAvatarDropdown() {
+  document.getElementById('avatar-dropdown').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+  const wrap = document.querySelector('.avatar-wrap');
+  if (wrap && !wrap.contains(e.target)) document.getElementById('avatar-dropdown')?.classList.remove('open');
+});
+
+function toggleNavGroup(headerEl) {
+  headerEl.classList.toggle('collapsed');
+  headerEl.nextElementSibling.classList.toggle('collapsed');
 }
 
 async function doLogin(event) {
@@ -956,11 +1404,11 @@ async function doLogin(event) {
     showApp();
     checkAPI();
   } catch (e) {
-    errEl.textContent = '❌ ' + e.message;
+    errEl.textContent = '' + e.message;
     errEl.style.display = 'block';
   }
   btn.disabled = false;
-  btn.innerHTML = '▶ Log in';
+  btn.innerHTML = 'Log in';
 }
 
 function fmt(n) {
@@ -978,22 +1426,41 @@ async function checkAPI() {
     const r = await fetch(API + '/health', { signal: AbortSignal.timeout(3000) });
     const d = await r.json();
     document.getElementById('api-dot').className = 'api-dot online';
-    document.getElementById('api-status').textContent = 'API online ✓';
+    document.getElementById('api-status').textContent = 'API online';
   } catch (e) {
     document.getElementById('api-dot').className = 'api-dot offline';
-    document.getElementById('api-status').textContent = 'API offline ✗';
+    document.getElementById('api-status').textContent = 'API offline ×';
   }
 }
 checkAPI();
 setInterval(checkAPI, 10000); // Check every 10 seconds
 
-// Navigate between pages
+// Navigate between pages. `el` is the clicked .nav-item (or null when
+// called programmatically, e.g. an "Export Centre" panel's shortcut button).
 function showPage(id, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + id).classList.add('active');
-  el.classList.add('active');
+  if (el) el.classList.add('active');
   if (id === 'assumptions') onAssumptionsPageShown();
+}
+
+// Page-specific one-time/lazy data loads, keyed by page id — called the
+// first time a page is shown so admin list pages don't fetch on every visit
+// unnecessarily, but still refresh whenever the user navigates back (cheap
+// reads, and keeps the list current if another user changed something).
+const PAGE_ON_SHOWN = {
+  clientmgmt:      () => loadClientManagement(),
+  usermgmt:        () => loadUserManagement(),
+  assumptionsets:  () => loadAssumptionSetsAdmin(),
+  audittrail:      () => loadAuditTrail(),
+};
+
+function navigateTo(pageId, groupLabel, itemLabel, el) {
+  showPage(pageId, el);
+  document.getElementById('header-breadcrumb').innerHTML =
+    `<strong>${_escapeHtml(groupLabel)}</strong><span class="breadcrumb-sep">/</span>${_escapeHtml(itemLabel)}`;
+  if (PAGE_ON_SHOWN[pageId]) PAGE_ON_SHOWN[pageId]();
 }
 
 // Switch tabs inside IFRS 17 page
@@ -1033,12 +1500,12 @@ function onProductTypeChanged() {
   const warningEl = document.getElementById('pp-unsupported-warning');
   if (PP_ANNUITY_TYPES.has(type)) {
     warningEl.style.display = 'block';
-    warningEl.innerHTML = '⚠️ <strong>Annuities aren\'t supported by the pricing engine yet.</strong> ' +
+    warningEl.innerHTML = '<strong>Annuities aren\'t supported by the pricing engine yet.</strong> ' +
       'Annuity cash flows run in the opposite direction from every other product here (premium in, ' +
       'then survival-contingent payments out) and need a dedicated engine.';
   } else if (PP_NONLIFE_TYPES.has(type)) {
     warningEl.style.display = 'block';
-    warningEl.innerHTML = '⚠️ <strong>Non-life classes aren\'t supported by this pricing engine yet.</strong> ' +
+    warningEl.innerHTML = '<strong>Non-life classes aren\'t supported by this pricing engine yet.</strong> ' +
       'General insurance pricing is loss-ratio/exposure based, not mortality-decrement based. AMVS has a ' +
       'separate non-life RESERVING engine (see the Reserving page) but no non-life PRICING engine.';
   } else {
@@ -1068,7 +1535,7 @@ function _riderRowHtml(rowId) {
     <td><input type="number" class="pp-rider-amount" value="5000" min="0" style="width:110px"></td>
     <td><input type="number" class="pp-rider-term" placeholder="= policy term" min="1" style="width:110px"></td>
     <td><input type="number" class="pp-rider-waiting" value="0" min="0" style="width:90px"></td>
-    <td><button class="btn" onclick="removeRiderRow(${rowId})" title="Remove this rider">✕</button></td>
+    <td><button class="btn" onclick="removeRiderRow(${rowId})" title="Remove this rider">×</button></td>
   </tr>`;
 }
 
@@ -1123,7 +1590,7 @@ function _dependantRowHtml(rowId) {
     </select></td>
     <td><input type="number" class="pp-dep-age" value="30" min="0" max="110" style="width:90px"></td>
     <td class="pp-dep-overrides-cell"></td>
-    <td><button class="btn" onclick="removeDependantRow(${rowId})" title="Remove this dependant">✕</button></td>
+    <td><button class="btn" onclick="removeDependantRow(${rowId})" title="Remove this dependant">×</button></td>
   </tr>`;
 }
 
@@ -1220,9 +1687,9 @@ async function runCustomPricing() {
     document.getElementById('pp-results-basis').textContent = d.data.assumptions_used.name || 'Ghana Market Defaults';
     document.getElementById('pp-basis-badge').textContent = d.data.assumptions_used.name || 'Ghana Market Defaults';
     document.getElementById('pp-results-panel').style.display = 'block';
-    statusEl.innerHTML = '<span style="color:#2a7">✓ Pricing complete</span>';
+    statusEl.innerHTML = '<span style="color:#2a7">Pricing complete</span>';
   } catch (e) {
-    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1249,7 +1716,7 @@ function renderPricingSummaryTab(data) {
   document.getElementById('pp-r-pvprem').textContent = 'GHS ' + fmt(data.pv_premiums);
   document.getElementById('pp-r-pvben').textContent  = 'GHS ' + fmt(data.pv_benefits);
   document.getElementById('pp-r-pvexp').textContent  = 'GHS ' + fmt(data.pv_expenses);
-  document.getElementById('pp-r-onerous').textContent = data.is_onerous ? 'ONEROUS ⚠️' : 'Not onerous ✓';
+  document.getElementById('pp-r-onerous').textContent = data.is_onerous ? 'Onerous' : 'Not onerous';
   document.getElementById('pp-r-onerous').className = 'result-value ' + (data.is_onerous ? 'bad' : 'good');
 
   document.getElementById('pp-alert-onerous').style.display = data.is_onerous ? 'block' : 'none';
@@ -1308,8 +1775,8 @@ function renderProfitSignatureTab(data) {
   const breakeven = data.profit_signature.breakeven_year;
 
   document.getElementById('pp-breakeven-note').innerHTML = breakeven
-    ? `✓ Breakeven achieved in policy year <span style="color:#2a7">${breakeven}</span>`
-    : '⚠ Breakeven not reached within the projection';
+    ? `Breakeven achieved in policy year <span style="color:#2a7">${breakeven}</span>`
+    : 'Breakeven not reached within the projection';
 
   document.getElementById('pp-profit-body').innerHTML = rows.map(r => `
     <tr style="${r.policy_year === breakeven ? 'background:#eaf7ee' : ''}">
@@ -1358,9 +1825,9 @@ async function runCustomRateTable() {
       },
       options: { responsive: true, plugins: { legend: { display: true } } },
     });
-    statusEl.innerHTML = '<span style="color:#2a7">✓ Rate table generated</span>';
+    statusEl.innerHTML = '<span style="color:#2a7">Rate table generated</span>';
   } catch (e) {
-    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1388,9 +1855,9 @@ async function runCustomSensitivity() {
         <td>${(row.pct_difference * 100).toFixed(2)}%</td>
       </tr>`;
     }).join('');
-    statusEl.innerHTML = '<span style="color:#2a7">✓ Sensitivity analysis complete</span>';
+    statusEl.innerHTML = '<span style="color:#2a7">Sensitivity analysis complete</span>';
   } catch (e) {
-    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1411,7 +1878,7 @@ async function downloadCustomPricingExcel() {
     const filename = d.data.excel_download_url.split('/').pop();
     await downloadFile(d.data.excel_download_url, filename);
   } catch (e) {
-    alert('❌ Download failed: ' + e.message);
+    alert('Download failed: ' + e.message);
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1432,7 +1899,7 @@ async function generateCustomAVRNote() {
     const filename = d.data.word_download_url.split('/').pop();
     await downloadFile(d.data.word_download_url, filename);
   } catch (e) {
-    alert('❌ Download failed: ' + e.message);
+    alert('Download failed: ' + e.message);
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1508,14 +1975,14 @@ async function runIFRS17() {
     document.getElementById('i-surplus').textContent = 'GHS ' + fmt(data.solvency.surplus_deficit);
     document.getElementById('i-carrow').textContent  = pct(data.solvency.capital_adequacy_ratio);
     const solEl = document.getElementById('i-solvent');
-    solEl.textContent  = data.solvency.is_solvent ? '✓ Solvent' : '✗ Capital breach!';
+    solEl.textContent  = data.solvency.is_solvent ? 'Solvent' : '× Capital breach!';
     solEl.className    = 'result-value ' + (data.solvency.is_solvent ? 'good' : 'bad');
 
   } catch (e) {
-    alert('❌ Error: ' + e.message);
+    alert('Error: ' + e.message);
   }
 
-  btn.innerHTML = '▶ Run valuation';
+  btn.innerHTML = 'Run valuation';
   btn.disabled = false;
 }
 
@@ -1536,7 +2003,7 @@ async function downloadIFRS17Excel() {
     const filename = d.data.excel_download_url.split('/').pop();
     await downloadFile(d.data.excel_download_url, filename);
   } catch (e) {
-    alert('❌ Download failed: ' + e.message);
+    alert('Download failed: ' + e.message);
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1588,7 +2055,7 @@ async function runRateTable() {
           <td>${pct(row.profit_margin)}</td>
           <td>${fmt(row.csm_at_inception)}</td>
           <td>${fmt(row.lrc_total)}</td>
-          <td style="color:${row.is_onerous ? 'red' : 'green'}">${row.is_onerous ? 'Yes ⚠️' : 'No ✓'}</td>
+          <td style="color:${row.is_onerous ? '#c33' : '#2a7'}">${row.is_onerous ? 'Yes' : 'No'}</td>
         </tr>`;
     });
 
@@ -1597,7 +2064,7 @@ async function runRateTable() {
       `<tr><td colspan="7" style="text-align:center;color:red;padding:20px">Error: ${e.message}</td></tr>`;
   }
 
-  btn.innerHTML = '▶ Generate rate table';
+  btn.innerHTML = 'Generate rate table';
   btn.disabled = false;
 }
 
@@ -1660,7 +2127,7 @@ async function runNicSummary() {
     });
   }
 
-  btn.innerHTML = '▶ Load NIC summary';
+  btn.innerHTML = 'Load NIC summary';
   btn.disabled = false;
 }
 
@@ -1680,7 +2147,7 @@ async function downloadReservingExcel() {
     const filename = d.data.excel_download_url.split('/').pop();
     await downloadFile(d.data.excel_download_url, filename);
   } catch (e) {
-    alert('❌ Download failed: ' + e.message);
+    alert('Download failed: ' + e.message);
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1702,7 +2169,7 @@ async function downloadNonlifeAvrWord() {
     const filename = d.data.word_download_url.split('/').pop();
     await downloadFile(d.data.word_download_url, filename);
   } catch (e) {
-    alert('❌ Download failed: ' + e.message);
+    alert('Download failed: ' + e.message);
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1747,7 +2214,7 @@ function onUploadFilesSelected() {
 
   const requiredListHtml = REQUIRED_UPLOAD_FILENAMES.map(req => {
     const present = uploadedNames.some(n => n.toLowerCase() === req.toLowerCase());
-    return `<li style="color:${present ? '#2a7' : '#c33'}">${present ? '✓' : '✗ missing —'} ${_escapeHtml(req)}</li>`;
+    return `<li style="color:${present ? '#2a7' : '#c33'}">${present ? 'Present' : 'Missing —'} ${_escapeHtml(req)}</li>`;
   }).join('');
 
   infoEl.innerHTML = `
@@ -1792,15 +2259,15 @@ async function runUploadReserving() {
     document.getElementById('upload-nic-gross-body').innerHTML = html;
     document.getElementById('panel-upload-results').style.display = 'block';
 
-    statusEl.innerHTML = `<span style="color:#2a7">✓ ${data.classes.length} classes loaded — ` +
+    statusEl.innerHTML = `<span style="color:#2a7">${data.classes.length} classes loaded — ` +
       `${data.journal_entries.length} journal entries, debit/credit balanced at ` +
       `${fmt(data.journal_total_debit)}</span>`;
     document.getElementById('upload-results-actions').style.display = 'block';
   } catch (e) {
-    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
   }
 
-  btn.innerHTML = '▶ Run Reserving';
+  btn.innerHTML = 'Run Reserving';
   btn.disabled = false;
 }
 
@@ -1816,7 +2283,7 @@ async function downloadUploadExcel() {
     const filename = d.data.excel_download_url.split('/').pop();
     await downloadFile(d.data.excel_download_url, filename);
   } catch (e) {
-    alert('❌ Download failed: ' + e.message);
+    alert('Download failed: ' + e.message);
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1834,7 +2301,7 @@ async function downloadUploadWord() {
     const filename = d.data.word_download_url.split('/').pop();
     await downloadFile(d.data.word_download_url, filename);
   } catch (e) {
-    alert('❌ Download failed: ' + e.message);
+    alert('Download failed: ' + e.message);
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -1862,7 +2329,7 @@ function _rateRowHtml(kind, year, ratePercent) {
   return `<tr>
     <td><input type="number" class="am-${kind}-year" value="${year}" min="1" style="width:90px"></td>
     <td><input type="number" class="am-${kind}-rate" value="${ratePercent}" step="0.1" style="width:90px"></td>
-    <td><button class="btn" onclick="this.closest('tr').remove()" style="padding:4px 10px" title="Remove this year">✕</button></td>
+    <td><button class="btn" onclick="this.closest('tr').remove()" style="padding:4px 10px" title="Remove this year">×</button></td>
   </tr>`;
 }
 
@@ -2011,7 +2478,7 @@ async function resetAllToGhanaDefaults() {
     document.getElementById('am-basis-badge').textContent = 'Ghana Market Defaults';
     statusEl.innerHTML = '';
   } catch (e) {
-    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
   }
 }
 
@@ -2038,10 +2505,10 @@ async function saveAssumptionSet() {
     if (!d.success) throw new Error(d.detail);
     assumptionsCurrentName = name;
     document.getElementById('am-basis-badge').textContent = name;
-    statusEl.innerHTML = `<span style="color:#2a7">✓ Saved as "${_escapeHtml(name)}"</span>`;
+    statusEl.innerHTML = `<span style="color:#2a7">Saved as "${_escapeHtml(name)}"</span>`;
     await refreshSavedAssumptionsList();
   } catch (e) {
-    statusEl.innerHTML = `<span style="color:red">❌ ${e.message}</span>`;
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -2077,7 +2544,7 @@ function loadSelectedAssumptionSet() {
   assumptionsCurrentName = found.name;
   renderAssumptionsForm(found.assumptions);
   document.getElementById('am-basis-badge').textContent = found.name;
-  statusEl.innerHTML = `<span style="color:#2a7">✓ Loaded "${_escapeHtml(found.name)}"</span>`;
+  statusEl.innerHTML = `<span style="color:#2a7">Loaded "${_escapeHtml(found.name)}"</span>`;
 }
 
 // Exposed so other pages (Pricing, IFRS 17, Rate Table) can include the
@@ -2085,6 +2552,211 @@ function loadSelectedAssumptionSet() {
 window.getCurrentAssumptionsPayload = function() {
   return collectAssumptionsFromForm();
 };
+
+// ── IFRS 17 — Non-Life ──────────────────────────────────────────────────────
+async function runIfrs17NonLife() {
+  const btn = document.getElementById('btn-nl-run');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
+  btn.disabled = true;
+  try {
+    const body = { client_id: document.getElementById('nl-client-id').value, period: document.getElementById('nl-period').value };
+    const r = await apiFetch('/nonlife/statements', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const data = d.data;
+    const t = data.totals.gross;
+    document.getElementById('nl-c-total').textContent = 'GHS ' + fmt(t.total_liability);
+    document.getElementById('nl-c-lrc').textContent   = 'GHS ' + fmt(t.lrc);
+    document.getElementById('nl-c-lic').textContent   = 'GHS ' + fmt(t.lic);
+    const onerousCount = data.classes.filter(c => data.by_class[c].gross.is_onerous).length;
+    document.getElementById('nl-c-onerous').textContent = onerousCount + ' / ' + data.classes.length;
+
+    document.getElementById('nl-body').innerHTML = data.classes.map(cls => {
+      const c = data.by_class[cls].gross;
+      return `<tr>
+        <td>${cls}</td><td>${fmt(c.ibnr)}</td><td>${fmt(c.ocr)}</td><td>${fmt(c.effect_of_discounting)}</td>
+        <td>${fmt(c.risk_adjustment)}</td><td>${fmt(c.lic)}</td><td>${fmt(c.upr)}</td><td>${fmt(c.dac)}</td>
+        <td>${fmt(c.lrc)}</td><td>${fmt(c.total_liability)}</td>
+        <td style="color:${c.is_onerous ? '#c33' : '#2a7'}">${c.is_onerous ? 'Yes' : 'No'}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('nl-results').style.display = 'block';
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+// ── Solvency ─────────────────────────────────────────────────────────────
+async function runSolvency() {
+  const btn = document.getElementById('btn-sv-run');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
+  btn.disabled = true;
+  try {
+    const body = {
+      company_name: document.getElementById('sv-company').value,
+      period: 'FY2025', reporting_freq: 'annual',
+      in_force_count: parseInt(document.getElementById('sv-count').value),
+      entry_age: parseInt(document.getElementById('sv-age').value),
+      tier: parseInt(document.getElementById('sv-tier').value),
+      product_type: 'whole_life',
+    };
+    const r = await apiFetch('/ifrs17', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const s = d.data.solvency;
+    document.getElementById('sv-avcap').textContent  = 'GHS ' + fmt(s.available_capital);
+    document.getElementById('sv-reqcap').textContent = 'GHS ' + fmt(s.required_capital);
+    document.getElementById('sv-surplus').textContent = 'GHS ' + fmt(s.available_capital - s.required_capital);
+    document.getElementById('sv-car').textContent = pct(s.capital_adequacy_ratio);
+    document.getElementById('sv-car').className = 'result-value ' + (s.is_solvent ? 'good' : 'bad');
+    document.getElementById('sv-status').textContent = s.is_solvent ? 'Solvent' : 'Capital breach';
+    document.getElementById('sv-status').className = 'result-value ' + (s.is_solvent ? 'good' : 'bad');
+
+    const okAlert = document.getElementById('sv-alert-ok');
+    const breachAlert = document.getElementById('sv-alert-breach');
+    if (s.is_solvent) {
+      okAlert.textContent = `Company is SOLVENT — CAR of ${pct(s.capital_adequacy_ratio)} exceeds the 100% minimum requirement.`;
+      okAlert.style.display = 'flex'; breachAlert.style.display = 'none';
+    } else {
+      breachAlert.textContent = `CAPITAL BREACH — CAR of ${pct(s.capital_adequacy_ratio)} is below the 100% minimum.`;
+      breachAlert.style.display = 'flex'; okAlert.style.display = 'none';
+    }
+    document.getElementById('sv-results').style.display = 'block';
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+// ── Financial Statements ─────────────────────────────────────────────────
+async function runFinancialStatements() {
+  const btn = document.getElementById('btn-fs-run');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
+  btn.disabled = true;
+  try {
+    const body = {
+      company_name: document.getElementById('fs-company').value,
+      period: 'FY2025', reporting_freq: 'annual',
+      in_force_count: parseInt(document.getElementById('fs-count').value),
+      entry_age: parseInt(document.getElementById('fs-age').value),
+      tier: 1, product_type: 'whole_life',
+    };
+    const r = await apiFetch('/ifrs17', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const data = d.data;
+    document.getElementById('fs-rev').textContent = 'GHS ' + fmt(data.pnl.insurance_revenue);
+    document.getElementById('fs-exp').textContent  = 'GHS ' + fmt(data.pnl.insurance_expenses);
+    document.getElementById('fs-isr').textContent  = 'GHS ' + fmt(data.pnl.insurance_service_result);
+    document.getElementById('fs-liab').textContent = 'GHS ' + fmt(data.total_liabilities);
+    document.getElementById('fs-liabusd').textContent = 'USD ' + fmt(data.total_liabilities_usd);
+    document.getElementById('fs-car').textContent = pct(data.solvency.capital_adequacy_ratio);
+    document.getElementById('fs-results').style.display = 'grid';
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+// ── Journal Entries ──────────────────────────────────────────────────────
+async function runJournalEntries() {
+  const btn = document.getElementById('btn-je-run');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Loading...';
+  btn.disabled = true;
+  try {
+    const body = { client_id: document.getElementById('je-client-id').value, period: document.getElementById('je-period').value };
+    const r = await apiFetch('/nonlife/statements', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const data = d.data;
+    document.getElementById('je-info').textContent =
+      `${data.journal_entry_count} entries — debit ${fmt(data.journal_total_debit)} = credit ${fmt(data.journal_total_credit)}`;
+
+    // The journal entries themselves live in the downloadable Excel workbook
+    // (see /nonlife/statements/download) — this page shows the debit/credit
+    // totals and points to the workbook's Journal Entries sheet for the
+    // full line-by-line ledger, rather than re-fetching every entry twice.
+    document.getElementById('je-body').innerHTML =
+      `<tr><td colspan="8" style="text-align:center;padding:16px" class="muted-text">
+        ${data.journal_entry_count} journal entries were generated — download the Excel workbook from the Reserving page to see every line (Journal Entries sheet).
+      </td></tr>`;
+    document.getElementById('je-panel').style.display = 'block';
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+// ── Administration: read-only list views ────────────────────────────────
+async function loadClientManagement() {
+  const tbody = document.getElementById('admin-clients-body');
+  try {
+    const r = await apiFetch('/clients');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    tbody.innerHTML = d.data.map(c => `<tr><td>${_escapeHtml(c.client_id)}</td><td>${_escapeHtml(c.name)}</td><td>${_escapeHtml(c.currency)}</td></tr>`).join('')
+      || '<tr><td colspan="3" class="muted-text" style="text-align:center;padding:20px">No clients configured</td></tr>';
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="3" style="color:red;text-align:center;padding:20px">${_escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+async function loadUserManagement() {
+  const tbody = document.getElementById('admin-users-body');
+  try {
+    const r = await apiFetch('/admin/users');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    tbody.innerHTML = d.data.map(u => `<tr>
+      <td>${_escapeHtml(u.email)}</td><td>${_escapeHtml(u.company_name)}</td><td>${_escapeHtml(u.role)}</td>
+      <td>${_escapeHtml(u.client_id || '—')}</td><td>${u.is_active ? 'Yes' : 'No'}</td>
+      <td class="muted-text">${u.created_at ? u.created_at.slice(0, 10) : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="muted-text" style="text-align:center;padding:20px">No users found</td></tr>';
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" style="color:red;text-align:center;padding:20px">${_escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+async function loadAssumptionSetsAdmin() {
+  const tbody = document.getElementById('admin-assumptionsets-body');
+  try {
+    const r = await apiFetch('/assumptions/list');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    tbody.innerHTML = d.data.map(s => `<tr>
+      <td>${_escapeHtml(s.name)}</td><td>${_escapeHtml(s.description || '—')}</td>
+      <td>${_escapeHtml(s.client_id || '—')}</td>
+      <td class="muted-text">${s.created_at ? s.created_at.slice(0, 10) : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="4" class="muted-text" style="text-align:center;padding:20px">No saved assumption sets yet</td></tr>';
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="4" style="color:red;text-align:center;padding:20px">${_escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+async function loadAuditTrail() {
+  const tbody = document.getElementById('admin-audittrail-body');
+  try {
+    const r = await apiFetch('/admin/audit-trail');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    document.getElementById('audit-count').textContent = `(${d.data.length} shown)`;
+    tbody.innerHTML = d.data.map(run => `<tr>
+      <td>${run.id}</td><td>${_escapeHtml(run.user_email)}</td><td>${_escapeHtml(run.client_id || '—')}</td>
+      <td>${_escapeHtml(run.run_type)}</td><td class="muted-text">${run.created_at ? run.created_at.replace('T', ' ').slice(0, 19) : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="muted-text" style="text-align:center;padding:20px">No valuation runs recorded yet</td></tr>';
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="color:red;text-align:center;padding:20px">${_escapeHtml(e.message)}</td></tr>`;
+  }
+}
 </script>
 </body>
 </html>

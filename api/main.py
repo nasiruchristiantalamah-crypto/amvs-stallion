@@ -36,7 +36,7 @@ from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED
 
 from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
 from db.models import User, ValuationRun, UserRole, AssumptionSet as AssumptionSetModel
-from auth.dependencies import get_current_user
+from auth.dependencies import get_current_user, get_current_admin
 from auth.router import router as auth_router
 
 @asynccontextmanager
@@ -270,6 +270,56 @@ def list_clients_endpoint():
         "data": [
             {"client_id": cid, "name": load_client(cid).name, "currency": load_client(cid).currency}
             for cid in list_clients()
+        ],
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ADMINISTRATION — read-only list views, admin-only
+# ══════════════════════════════════════════════════════════════════════════════
+# Client Management and Assumption Sets reuse GET /clients and GET
+# /assumptions/list respectively (already built) — these two are the only
+# genuinely new endpoints the Administration nav group needs. Both are
+# view-only: no create/edit/delete yet, by design (see the dashboard's
+# Administration pages for the explicit "view only" notice).
+
+@protected.get("/admin/users")
+def admin_list_users(db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin)):
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": u.id, "email": u.email, "company_name": u.company_name,
+                "role": u.role.value if hasattr(u.role, "value") else u.role,
+                "client_id": u.client_id, "is_active": u.is_active,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+            }
+            for u in users
+        ],
+    }
+
+
+@protected.get("/admin/audit-trail")
+def admin_list_audit_trail(
+    limit: int = 200, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin),
+):
+    runs = (
+        db.query(ValuationRun)
+        .order_by(ValuationRun.created_at.desc())
+        .limit(min(limit, 500))
+        .all()
+    )
+    user_emails = {u.id: u.email for u in db.query(User).all()}
+    return {
+        "success": True,
+        "data": [
+            {
+                "id": r.id, "user_email": user_emails.get(r.user_id, f"user #{r.user_id}"),
+                "client_id": r.client_id, "run_type": r.run_type,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in runs
         ],
     }
 
