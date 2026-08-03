@@ -1,0 +1,21 @@
+name: "Ghana 20-Year Traditional Endowment"
+policy_term_years: 20
+premium_mode: "monthly"
+measurement_model: "gmm"
+product_type: "endowment"
+
+riders:
+  - rider_type: "death"
+    name: "Death Benefit"
+    benefit_main: 50000
+    benefit_dependant: 0
+    incidence_basis: "mortality"
+
+dependants: []
+
+# Traditional endowment: sum assured paid on death DURING the term (rider
+# above), OR the same sum assured paid to the policyholder at the end of
+# the term if they survive to maturity — engine/cashflows.py pays this to
+# survivors (lx_end-weighted) at the end of the policy year given here.
+maturity_benefits:
+  20: 50000

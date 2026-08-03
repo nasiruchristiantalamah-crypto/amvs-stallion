@@ -1,0 +1,40 @@
+company_name: Provident Insurance Limited
+run_date: '2026-01-01'
+reporting_currency: GHS
+fx_rate_ghs_usd: 15.5
+reporting_frequency: annual
+cohort_year: 2026
+entry_age_main: 35
+gender_main: unisex
+gender_main_str: unisex
+max_age: 80
+mortality_loading: -0.2
+lapse_schedule:
+  rates:
+    '1': 0.3
+    '2': 0.15
+collection_rate: 0.7
+valuation_rate_pa: 0.165
+investment_rate_pa: 0.12
+expense_inflation_pa: 0.1
+locked_in_rate_pa: 0.165
+usd_risk_free_rate: 0.045
+policy_fee_monthly: 1.0
+acquisition_cost: 5.05
+renewal_expense_annual: 15.37
+claims_admin_cost: 5.0
+commission:
+  initial_rate: 0.15
+  renewal_rate: 0.02
+  rates:
+    '1': 0.12
+    '2': 0.12
+target_profit_margin: 0.15
+ra_method: cost_of_capital
+coc_rate: 0.06
+solvency_capital: 500000
+ra_confidence_level: 0.75
+_meta:
+  label: Ghana market defaults, 2yr renewable micro-insurance basis (Part 1 universal
+    pricing engine)
+  saved_at: '2026-08-03T09:12:25.232958'

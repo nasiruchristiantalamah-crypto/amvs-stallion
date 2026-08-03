@@ -25,10 +25,11 @@ from engine.ifrs17_nonlife import generate_nonlife_paa_statements
 from engine.data_loader import load_paid_claims
 from engine.journals import generate_nonlife_journal
 from engine.clients import list_clients, load_client
+from engine.assumptions_manager import AssumptionSet
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
 from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
-from db.models import User, ValuationRun
+from db.models import User, ValuationRun, UserRole, AssumptionSet as AssumptionSetModel
 from auth.dependencies import get_current_user
 from auth.router import router as auth_router
 
@@ -149,28 +150,31 @@ def _require_data_access(client_id: str) -> None:
 
 
 class PricingRequest(BaseModel):
-    entry_age:         int   = Field(35,   ge=18, le=70)
-    tier:              int   = Field(1,    ge=1,  le=3)
-    product:           str   = Field("whole_life")
-    dependant:         str   = Field("spouse")
-    mortality_loading: float = Field(-0.20)
-    target_margin:     float = Field(0.15, ge=0,  le=0.5)
+    entry_age:         int             = Field(35,   ge=18, le=70)
+    tier:              int             = Field(1,    ge=1,  le=3)
+    product:           str             = Field("whole_life")
+    dependant:         str             = Field("spouse")
+    mortality_loading: Optional[float] = Field(None, description="Quick override for just mortality loading — superseded by `assumptions` if both are given")
+    target_margin:     Optional[float] = Field(None, ge=0, le=0.5, description="Quick override for just the target profit margin — superseded by `assumptions` if both are given")
+    assumptions:       Optional[dict]  = Field(None, description="Full engine.assumptions_manager.AssumptionSet.to_dict() shape — see GET /assumptions/defaults. Overrides the product's saved basis for this run only; omit to use the product's own saved assumptions.")
 
 class IFRS17Request(BaseModel):
-    company_name:    str   = Field(...)
-    product_type:    str   = Field("whole_life")
-    period:          str   = Field("FY2025")
-    period_index:    int   = Field(1, ge=1)
-    in_force_count:  int   = Field(1000, ge=1)
-    entry_age:       int   = Field(35,   ge=18, le=70)
-    tier:            int   = Field(1,    ge=1,  le=3)
-    reporting_freq:  str   = Field("annual")
+    company_name:    str            = Field(...)
+    product_type:    str            = Field("whole_life")
+    period:          str            = Field("FY2025")
+    period_index:    int            = Field(1, ge=1)
+    in_force_count:  int            = Field(1000, ge=1)
+    entry_age:       int            = Field(35,   ge=18, le=70)
+    tier:            int            = Field(1,    ge=1,  le=3)
+    reporting_freq:  str            = Field("annual")
+    assumptions:     Optional[dict] = Field(None, description="Full AssumptionSet override — see PricingRequest.assumptions")
 
 class RateTableRequest(BaseModel):
-    tier:      int = Field(1,  ge=1,  le=3)
-    product:   str = Field("whole_life")
-    age_start: int = Field(18, ge=18, le=70)
-    age_end:   int = Field(70, ge=18, le=70)
+    tier:        int             = Field(1,  ge=1,  le=3)
+    product:     str             = Field("whole_life")
+    age_start:   int             = Field(18, ge=18, le=70)
+    age_end:     int             = Field(70, ge=18, le=70)
+    assumptions: Optional[dict]  = Field(None, description="Full AssumptionSet override — see PricingRequest.assumptions")
 
 class ReservingRequest(BaseModel):
     class_of_business:          str                     = Field(..., description="e.g. Motor, Fire, Accident, Others")
@@ -263,18 +267,122 @@ def list_clients_endpoint():
         ],
     }
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  ASSUMPTIONS MANAGER — user-editable, named, saveable assumption sets
+# ══════════════════════════════════════════════════════════════════════════════
+# See engine/assumptions_manager.py's AssumptionSet — this is the request-time
+# override layer (dashboard Assumptions page), distinct from a client/
+# product's own saved engine.assumptions.ProductAssumptions (clients/<id>/
+# assumptions/). Every pricing/IFRS17/rate-table request above can carry an
+# `assumptions` field built from one of these saved sets.
+
+class AssumptionSetSaveRequest(BaseModel):
+    name:         str            = Field(..., description="Display name, e.g. 'PIC Pricing Basis 2025'")
+    description:  str            = Field("")
+    client_id:    Optional[str]  = Field(None, description="Which insurer this basis is for, if any")
+    assumptions:  dict           = Field(..., description="Full AssumptionSet.to_dict() shape — see GET /assumptions/defaults")
+    is_default:   bool           = Field(False)
+
+
+def _assumption_set_row_to_dict(row: AssumptionSetModel) -> dict:
+    import json
+    return {
+        "id":          row.id,
+        "name":        row.name,
+        "description": row.description,
+        "client_id":   row.client_id,
+        "user_id":     row.user_id,
+        "is_default":  row.is_default,
+        "created_at":  row.created_at.isoformat() if row.created_at else None,
+        "updated_at":  row.updated_at.isoformat() if row.updated_at else None,
+        "assumptions": json.loads(row.assumptions_json),
+    }
+
+
+@protected.get("/assumptions/defaults")
+def get_assumptions_defaults():
+    return {"success": True, "data": AssumptionSet.ghana_defaults().to_dict()}
+
+
+@protected.get("/assumptions/client/{client_id}")
+def get_assumptions_for_client(client_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    rows = (
+        db.query(AssumptionSetModel)
+        .filter(AssumptionSetModel.client_id == client_id)
+        .order_by(AssumptionSetModel.created_at.desc())
+        .all()
+    )
+    return {"success": True, "data": [_assumption_set_row_to_dict(r) for r in rows]}
+
+
+@protected.post("/assumptions/save")
+def save_assumption_set(request: AssumptionSetSaveRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    import json
+    try:
+        # Validate the payload actually parses into a real AssumptionSet
+        # (catches typos/malformed nested groups) before persisting it —
+        # save the RE-SERIALISED, validated form, not the raw request body.
+        parsed = AssumptionSet.from_dict(request.assumptions)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid assumptions payload: {e}")
+
+    row = AssumptionSetModel(
+        name             = request.name,
+        description      = request.description,
+        client_id        = request.client_id,
+        user_id          = current_user.id,
+        is_default       = request.is_default,
+        assumptions_json = json.dumps(parsed.to_dict()),
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"success": True, "data": _assumption_set_row_to_dict(row)}
+
+
+@protected.get("/assumptions/list")
+def list_assumption_sets(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    rows = (
+        db.query(AssumptionSetModel)
+        .filter(AssumptionSetModel.user_id == current_user.id)
+        .order_by(AssumptionSetModel.created_at.desc())
+        .all()
+    )
+    return {"success": True, "data": [_assumption_set_row_to_dict(r) for r in rows]}
+
+
+@protected.delete("/assumptions/{assumption_set_id}")
+def delete_assumption_set(assumption_set_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    row = db.query(AssumptionSetModel).filter(AssumptionSetModel.id == assumption_set_id).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Assumption set not found")
+    if row.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this assumption set")
+    db.delete(row)
+    db.commit()
+    return {"success": True, "data": {"deleted_id": assumption_set_id}}
+
+
 @protected.post("/pricing")
 def pricing_endpoint(request: PricingRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
+        assumption_set = AssumptionSet.from_dict(request.assumptions) if request.assumptions else None
         result = run_pricing(
             client_id          = DEFAULT_CLIENT,
             product_name       = _resolve_product_name(request.product, request.tier),
             entry_age          = request.entry_age,
             mortality_loading  = request.mortality_loading,
             target_margin      = request.target_margin,
+            assumption_set     = assumption_set,
             verbose            = False,
         )
-        _log_valuation_run(db, current_user, "pricing", request.model_dump(), result, client_id=DEFAULT_CLIENT)
+        # inputs carries both the raw request AND the full assumptions basis
+        # actually applied (result["assumptions_used"]) — the audit trail
+        # this run can always be reproduced from, whether or not the caller
+        # supplied a custom `assumptions` override.
+        audit_inputs = {**request.model_dump(), "assumptions_used": result["assumptions_used"]}
+        _log_valuation_run(db, current_user, "pricing", audit_inputs, result, client_id=DEFAULT_CLIENT)
         return {"success": True, "data": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -338,10 +446,12 @@ def _build_ifrs17_response_data(report: dict) -> dict:
             "profit_margin":   round(pv.profit_margin, 4),
             "is_onerous":      pv.is_onerous,
         },
+        "assumptions_used": report["assumptions_used"],
     }
 
 
 def _run_ifrs17_from_request(request: "IFRS17Request") -> dict:
+    assumption_set = AssumptionSet.from_dict(request.assumptions) if getattr(request, "assumptions", None) else None
     report = run_ifrs17(
         client_id       = DEFAULT_CLIENT,
         product_name    = _resolve_product_name(request.product_type, request.tier),
@@ -351,6 +461,7 @@ def _run_ifrs17_from_request(request: "IFRS17Request") -> dict:
         in_force_count  = request.in_force_count,
         entry_age       = request.entry_age,
         reporting_freq  = request.reporting_freq,
+        assumption_set  = assumption_set,
         verbose         = False,
     )
     return _build_ifrs17_response_data(report)
@@ -360,7 +471,8 @@ def _run_ifrs17_from_request(request: "IFRS17Request") -> dict:
 def ifrs17_endpoint(request: IFRS17Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
         response_data = _run_ifrs17_from_request(request)
-        _log_valuation_run(db, current_user, "ifrs17", request.model_dump(), response_data, client_id=DEFAULT_CLIENT)
+        audit_inputs = {**request.model_dump(), "assumptions_used": response_data["assumptions_used"]}
+        _log_valuation_run(db, current_user, "ifrs17", audit_inputs, response_data, client_id=DEFAULT_CLIENT)
         return {"success": True, "data": response_data}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -370,14 +482,17 @@ def ifrs17_endpoint(request: IFRS17Request, db: Session = Depends(get_db), curre
 @protected.post("/rate-table")
 def rate_table_endpoint(request: RateTableRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
+        assumption_set = AssumptionSet.from_dict(request.assumptions) if request.assumptions else None
         result = run_rate_table(
-            client_id     = DEFAULT_CLIENT,
-            product_name  = _resolve_product_name(request.product, request.tier),
-            age_start     = request.age_start,
-            age_end       = request.age_end,
-            verbose       = False,
+            client_id       = DEFAULT_CLIENT,
+            product_name    = _resolve_product_name(request.product, request.tier),
+            age_start       = request.age_start,
+            age_end         = request.age_end,
+            assumption_set  = assumption_set,
+            verbose         = False,
         )
-        _log_valuation_run(db, current_user, "rate_table", request.model_dump(), result, client_id=DEFAULT_CLIENT)
+        audit_inputs = {**request.model_dump(), "assumptions_used": result["assumptions_used"]}
+        _log_valuation_run(db, current_user, "rate_table", audit_inputs, result, client_id=DEFAULT_CLIENT)
         return {"success": True, "data": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

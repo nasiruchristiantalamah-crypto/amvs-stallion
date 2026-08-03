@@ -128,28 +128,38 @@ def calculate_cash_flows(
                 benefit_lines[rider.name] = 0.0
                 continue
 
+            benefit_mult = rider.get_benefit_multiplier(pol_year)   # 1.0 unless a decreasing-term schedule is set
+
             if rider.incidence_basis == "mortality":
-                amount = dec.main.dx * rider.benefit_main
+                amount = dec.main.dx * rider.benefit_main * benefit_mult
                 expected_events += dec.main.dx
                 for i, dependant in enumerate(product.dependants):
                     dep_dec = dec.dependants.get(i)
-                    if dep_dec is None:
+                    if dep_dec is None or dependant.benefit_multiplier == 0:
                         continue
-                    amount += dep_dec.dx * rider.benefit_dependant * dependant.benefit_multiplier
+                    amount += dep_dec.dx * rider.benefit_dependant * benefit_mult * dependant.benefit_multiplier
                     expected_events += dep_dec.dx
             else:
                 monthly_incidence = rider.annual_incidence_rate / 12
-                amount = lx * monthly_incidence * rider.benefit_main * rider.avg_events_per_year
+                amount = lx * monthly_incidence * rider.benefit_main * benefit_mult * rider.avg_events_per_year
                 expected_events += lx * monthly_incidence
                 for i, dependant in enumerate(product.dependants):
                     dep_dec = dec.dependants.get(i)
-                    if dep_dec is None:
+                    if dep_dec is None or dependant.benefit_multiplier == 0:
                         continue
                     dep_lx = dep_dec.lx
-                    amount += dep_lx * monthly_incidence * rider.benefit_dependant * dependant.benefit_multiplier * rider.avg_events_per_year
+                    amount += dep_lx * monthly_incidence * rider.benefit_dependant * benefit_mult * dependant.benefit_multiplier * rider.avg_events_per_year
                     expected_events += dep_lx * monthly_incidence
 
             benefit_lines[rider.name] = amount
+
+        # ── MATURITY BENEFIT — paid to survivors at the end of specific ──
+        # policy years (product.maturity_benefits) — what makes a term
+        # product an endowment/educational endowment. Weighted by lx_end
+        # (survivors after this month's deaths/lapses), since anyone who
+        # died this month already received the death benefit above instead.
+        if month % 12 == 0 and pol_year in product.maturity_benefits:
+            benefit_lines["Maturity Benefit"] = dec.main.lx_end * product.maturity_benefits[pol_year]
 
         total_ben = sum(benefit_lines.values())
         claims_admin = expected_events * assumptions.claims_admin_cost

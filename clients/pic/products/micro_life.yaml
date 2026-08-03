@@ -1,8 +1,17 @@
 name: "Ghana Micro Life Insurance"
-policy_term_years: 2   # short-duration — PAA eligible
-premium_mode: "monthly"
+policy_term_years: 2   # 2-year renewable term — short-duration, PAA eligible
+premium_mode: "daily"  # collected as daily contributions, aggregated to a monthly premium
 measurement_model: "paa"
+product_type: "micro_insurance"
 
+# Structure validated against a real Ghanaian 2-year-renewable-term
+# micro-insurance product (main + up to 3 optional dependants — spouse,
+# parent, child — death/funeral/TPD/hospitalisation cover, no maturity
+# value). Parent and Child are included below with a zero benefit amount
+# to demonstrate the "up to 3 dependants, each independently optional"
+# capability without changing the priced benefit — set benefit_dependant
+# above 0 (and give the dependant a benefit_multiplier) for a client that
+# actually covers all three simultaneously.
 riders:
   - rider_type: "death"
     name: "Death Benefit"
@@ -10,21 +19,36 @@ riders:
     benefit_dependant: 5000
     incidence_basis: "mortality"
 
+  - rider_type: "tpd"
+    name: "Total & Permanent Disability"
+    benefit_main: 2500
+    benefit_dependant: 2500
+    incidence_basis: "incidence"
+    annual_incidence_rate: 0.00021
+
   - rider_type: "hospitalization"
     name: "Hospitalization Cash Benefit"
-    benefit_main: 50
-    benefit_dependant: 0
+    benefit_main: 100          # GHS per night
+    benefit_dependant: 0       # main life only
     incidence_basis: "incidence"
-    annual_incidence_rate: 0.0025
-    avg_events_per_year: 5.0
+    annual_incidence_rate: 0.0025    # probability of a qualifying hospital admission per year
+    avg_events_per_year: 3.0         # average nights per qualifying admission (min 2, max 30 per year)
 
   - rider_type: "funeral"
     name: "Funeral Support Benefit"
-    benefit_main: 500
-    benefit_dependant: 500
+    benefit_main: 250
+    benefit_dependant: 250
     incidence_basis: "mortality"
 
 dependants:
   - relationship: "spouse"
-    age_offset: -3
+    age_offset: 3    # spouse assumed 3 years OLDER than the main life
     benefit_multiplier: 1.0
+
+  - relationship: "parent"
+    age_offset: 20
+    benefit_multiplier: 0.0    # structurally covered, zero benefit by default — see note above
+
+  - relationship: "child"
+    age: 10
+    benefit_multiplier: 0.0    # structurally covered, zero benefit by default — see note above

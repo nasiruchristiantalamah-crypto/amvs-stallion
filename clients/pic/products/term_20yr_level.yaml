@@ -1,0 +1,14 @@
+name: "Ghana 20-Year Level Term Insurance"
+policy_term_years: 20
+premium_mode: "monthly"
+measurement_model: "gmm"
+product_type: "term"
+
+riders:
+  - rider_type: "death"
+    name: "Death Benefit"
+    benefit_main: 50000
+    benefit_dependant: 0
+    incidence_basis: "mortality"
+
+dependants: []

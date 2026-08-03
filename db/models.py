@@ -21,14 +21,25 @@ What this file does:
                         what outputs. Inputs/outputs are stored as JSON
                         exactly as the engine received/returned them, so a
                         run can be inspected or diffed later without
-                        re-running the engine.
+                        re-running the engine. `inputs` includes the full
+                        assumptions JSON actually used for the run (see
+                        engine/assumptions_manager.py's AssumptionSet) —
+                        the audit trail for "what basis produced this number".
+        AssumptionSet  — a named, saved bundle of pricing/valuation
+                        assumptions a user built on the dashboard's
+                        Assumptions page (engine/assumptions_manager.py's
+                        AssumptionSet dataclass, serialised to JSON in
+                        assumptions_json). Lets a user re-apply the same
+                        named basis ("PIC Pricing Basis 2025", "Stressed
+                        Assumptions") across multiple runs without
+                        re-entering every field each time.
 ================================================================================
 """
 
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SAEnum, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, Enum as SAEnum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from db.database import Base
@@ -84,3 +95,23 @@ class ValuationRun(Base):
     created_at  = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
 
     user = relationship("User", back_populates="valuation_runs")
+
+
+class AssumptionSet(Base):
+    __tablename__ = "assumption_sets"
+
+    id                = Column(Integer, primary_key=True, index=True)
+    name              = Column(String(255), nullable=False)
+    description       = Column(String(1000), nullable=True)
+    client_id         = Column(String(64), nullable=True, index=True)
+    user_id           = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    is_default        = Column(Boolean, nullable=False, default=False)
+    created_at        = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    updated_at        = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
+    # Full engine.assumptions_manager.AssumptionSet.to_dict() output, as JSON
+    # text — stored as Text (not the JSON column type) so it round-trips
+    # identically on both SQLite (dev) and Postgres (prod) without either
+    # engine re-normalising key order/types.
+    assumptions_json  = Column(Text, nullable=False)
+
+    user = relationship("User")

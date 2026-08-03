@@ -42,6 +42,7 @@ from typing import Dict, List, Optional
 
 from engine.assumptions import ReportingFrequency
 from engine.assumptions_store import load_assumptions
+from engine.assumptions_manager import AssumptionSet
 from engine.clients import load_product
 from engine.decrement import run_decrement_projection, summarise_decrement
 from engine.cashflows import calculate_cash_flows
@@ -54,9 +55,22 @@ from engine.chain_ladder import run_chain_ladder
 from engine.bornhuetter_ferguson import estimate_expected_loss_ratio, run_blended_reserving
 
 
-def _load_assumptions_and_product(client_id: str, product_name: str, assumptions_version: str = "current"):
+def _load_assumptions_and_product(
+    client_id: str, product_name: str, assumptions_version: str = "current",
+    assumption_set: Optional[AssumptionSet] = None,
+):
+    """
+    Load a client/product's saved ProductAssumptions as always; if
+    `assumption_set` is given (e.g. from an API request body — see
+    api/main.py), apply it on TOP of that saved basis, overriding whatever
+    fields it carries. When `assumption_set` is None (the default, and
+    every existing call site before this parameter existed), behaviour is
+    completely unchanged.
+    """
     assumptions = load_assumptions(client_id, product_name, assumptions_version)
     product     = load_product(client_id, product_name)
+    if assumption_set is not None:
+        assumptions = assumption_set.to_product_assumptions(base=assumptions)
     return assumptions, product
 
 
@@ -67,6 +81,7 @@ def run_pricing(
     entry_age:            Optional[int]  = None,
     mortality_loading:    Optional[float]= None,
     target_margin:        Optional[float]= None,
+    assumption_set:       Optional[AssumptionSet] = None,
     verbose:              bool           = True,
 ) -> dict:
     """
@@ -79,6 +94,11 @@ def run_pricing(
         entry_age            : Override the entry age from the saved assumptions, if given
         mortality_loading    : Override the mortality loading, if given
         target_margin        : Override the target profit margin, if given
+        assumption_set       : A full engine.assumptions_manager.AssumptionSet to apply on top
+                               of the saved basis (e.g. a user-edited basis from the dashboard's
+                               Assumptions page) — see _load_assumptions_and_product(). Applied
+                               BEFORE entry_age/mortality_loading/target_margin above, so those
+                               three still take final precedence when also given.
         verbose               : Print progress
 
     Returns:
@@ -86,7 +106,9 @@ def run_pricing(
     """
     start = time.time()
 
-    assumptions, product = _load_assumptions_and_product(client_id, product_name, assumptions_version)
+    assumptions, product = _load_assumptions_and_product(
+        client_id, product_name, assumptions_version, assumption_set=assumption_set,
+    )
 
     if entry_age is not None:
         assumptions.entry_age_main = entry_age
@@ -141,6 +163,7 @@ def run_pricing(
         "client_id":            client_id,
         "product":              product.name,
         "assumptions_version":  assumptions_version,
+        "assumptions_used":     assumptions.to_dict(),
         "entry_age":            assumptions.entry_age_main,
         "monthly_premium":      round(premium, 2),
         "annual_premium":       round(premium * 12, 2),
@@ -175,6 +198,7 @@ def run_ifrs17(
     reporting_freq:       Optional[str]  = None,
     company_name:         Optional[str]  = None,
     use_prior_snapshot:   bool           = True,
+    assumption_set:       Optional[AssumptionSet] = None,
     verbose:              bool           = True,
 ) -> dict:
     """
@@ -196,6 +220,8 @@ def run_ifrs17(
                                 previous period's saved closing balance
                                 (engine/rollforward_store.py). Set False to
                                 re-measure from scratch.
+        assumption_set       : Optional engine.assumptions_manager.AssumptionSet
+                               to apply on top of the saved basis — see run_pricing().
         verbose               : Print progress
 
     Returns:
@@ -210,7 +236,9 @@ def run_ifrs17(
     """
     start = time.time()
 
-    assumptions, product = _load_assumptions_and_product(client_id, product_name, assumptions_version)
+    assumptions, product = _load_assumptions_and_product(
+        client_id, product_name, assumptions_version, assumption_set=assumption_set,
+    )
 
     if entry_age is not None:
         assumptions.entry_age_main = entry_age
@@ -276,7 +304,7 @@ def run_ifrs17(
         print(f"\n  Completed in {elapsed:.2f} seconds")
         print(f"{'='*60}\n")
 
-    return {**report, "client_id": client_id, "elapsed_seconds": round(elapsed, 2)}
+    return {**report, "client_id": client_id, "elapsed_seconds": round(elapsed, 2), "assumptions_used": assumptions.to_dict()}
 
 
 def run_rate_table(
@@ -285,6 +313,7 @@ def run_rate_table(
     assumptions_version:  str  = "current",
     age_start:            int  = 18,
     age_end:              int  = 70,
+    assumption_set:       Optional[AssumptionSet] = None,
     verbose:              bool = True,
 ) -> dict:
     """
@@ -293,16 +322,20 @@ def run_rate_table(
     GeneratePremiumRates() macro.
 
     Parameters:
-        client_id    : Which insurer
-        product_name : Which product
-        age_start    : Starting age for table
-        age_end      : Ending age for table
+        client_id      : Which insurer
+        product_name   : Which product
+        age_start      : Starting age for table
+        age_end        : Ending age for table
+        assumption_set : Optional engine.assumptions_manager.AssumptionSet
+                         to apply on top of the saved basis — see run_pricing().
 
     Returns:
         Dict with age -> premium mapping
     """
     start = time.time()
-    assumptions, product = _load_assumptions_and_product(client_id, product_name, assumptions_version)
+    assumptions, product = _load_assumptions_and_product(
+        client_id, product_name, assumptions_version, assumption_set=assumption_set,
+    )
 
     if verbose:
         print(f"\n{'='*60}")
@@ -332,10 +365,11 @@ def run_rate_table(
         print(f"{'='*60}\n")
 
     return {
-        "client_id":    client_id,
-        "product":      product.name,
-        "rate_table":   table,
-        "elapsed":      round(elapsed, 2),
+        "client_id":        client_id,
+        "product":          product.name,
+        "rate_table":       table,
+        "elapsed":          round(elapsed, 2),
+        "assumptions_used": assumptions.to_dict(),
     }
 
 

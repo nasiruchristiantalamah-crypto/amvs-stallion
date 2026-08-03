@@ -1,0 +1,26 @@
+name: "Ghana 20-Year Decreasing Term Insurance"
+policy_term_years: 20
+premium_mode: "monthly"
+measurement_model: "gmm"
+product_type: "term"
+
+# Mortgage-protection-style reducing cover: sum assured steps down over
+# the term instead of staying level — same product shape as
+# term_20yr_level.yaml, just with a benefit_schedule on the death rider.
+# Uses Rider.get_benefit_multiplier()'s step-function lookup (same design
+# as LapseSchedule/CommissionSchedule): the multiplier holds at the last
+# defined policy year until the next one is reached.
+riders:
+  - rider_type: "death"
+    name: "Death Benefit"
+    benefit_main: 50000
+    benefit_dependant: 0
+    incidence_basis: "mortality"
+    benefit_schedule:
+      1: 1.00
+      5: 0.80
+      10: 0.60
+      15: 0.40
+      20: 0.20
+
+dependants: []
