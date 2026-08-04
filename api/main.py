@@ -611,6 +611,8 @@ class CustomRiderRequest(BaseModel):
     benefit_amount:          float           = Field(..., ge=0)
     rider_term_years:        Optional[int]   = Field(None, ge=1, le=100, description="Defaults to the product's own policy term if omitted")
     waiting_period_months:   int             = Field(0, ge=0)
+    annual_incidence_rate:   Optional[float] = Field(None, ge=0, le=1, description="Overrides the engine's default incidence rate for non-mortality-driven riders (tpd, critical_illness, hospital_cash, ...). Ignored for death/funeral (mortality-driven) and maturity/savings.")
+    avg_events_per_year:     Optional[float] = Field(None, ge=0, description="Overrides the engine's default average events per year (e.g. nights per hospital admission). Ignored for death/funeral/maturity/savings.")
 
 class CustomDependantRequest(BaseModel):
     relationship:       str                    = Field(..., description="spouse, parent, child, or sibling")
@@ -623,19 +625,25 @@ class CustomProductRequest(BaseModel):
     policy_term_years:             Optional[int]                  = Field(None, ge=1, le=100, description="Omit for Whole Life")
     premium_payment_term_years:    Optional[int]                   = Field(None, ge=1, le=100)
     premium_mode:                  str                              = Field("monthly")
-    sum_assured:                   float                             = Field(0, ge=0)
+    sum_assured:                   float                             = Field(0, ge=0, description="Main benefit amount — always priced as its own rider, in addition to whatever is in `riders` below")
     entry_age:                     int                                = Field(35, ge=0, le=100)
     gender:                        str                                 = Field("unisex")
-    riders:                        List[CustomRiderRequest]            = Field(default_factory=list)
+    riders:                        List[CustomRiderRequest]            = Field(default_factory=list, description="Additional riders/benefits layered on top of the main sum_assured benefit — not a replacement for it")
     dependants:                    List[CustomDependantRequest]         = Field(default_factory=list)
     assumptions:                   Optional[dict]                        = Field(None, description="Full AssumptionSet override — defaults to Ghana market defaults if omitted (a custom product has no saved basis of its own)")
     target_margin:                 Optional[float]                        = Field(None, ge=0, le=0.5)
 
-    @property
-    def riders_or_default(self) -> List[CustomRiderRequest]:
-        if self.riders:
-            return self.riders
-        return [CustomRiderRequest(name="Death Benefit", benefit_type="death", benefit_amount=self.sum_assured)]
+
+# Which rider type sum_assured represents, per product_type — every type not
+# listed here (annuities, non-life) never reaches _build_product_from_request
+# because _check_custom_product_type_supported rejects it first.
+PRIMARY_BENEFIT_TYPE_BY_PRODUCT_TYPE: Dict[str, str] = {
+    "whole_life": "death", "level_term": "death", "decreasing_term": "death",
+    "endowment": "death", "educational_endowment": "death", "pure_endowment": "death",
+    "micro_life": "death", "group_life": "death",
+    "hospital_cash": "hospital_cash", "medical_expense": "lump_sum_hospital",
+    "critical_illness": "critical_illness", "income_protection": "income_protection",
+}
 
 
 def _resolve_custom_assumptions(request: "CustomProductRequest") -> ProductAssumptions:
@@ -648,8 +656,25 @@ def _resolve_custom_assumptions(request: "CustomProductRequest") -> ProductAssum
 
 
 def _build_product_from_request(request: "CustomProductRequest"):
+    """
+    sum_assured always becomes its own "Main Benefit" rider (when > 0) —
+    it is never replaced by whatever's in `riders`, which are purely
+    ADDITIONAL benefits (TPD, critical illness, hospital cash, ...) layered
+    on top. Previously these were either/or (riders_or_default), which
+    silently ignored sum_assured entirely whenever the dashboard's riders
+    table had at least one row — see tests/test_custom_pricing.py's
+    sum-assured regression tests for the failure mode this fixes.
+    """
     spec = request.model_dump()
-    spec["riders"] = [r.model_dump() for r in request.riders_or_default]
+    riders = []
+    if request.sum_assured > 0:
+        primary_type = PRIMARY_BENEFIT_TYPE_BY_PRODUCT_TYPE.get(request.product_type, "death")
+        riders.append({
+            "name": "Main Benefit", "benefit_type": primary_type, "benefit_amount": request.sum_assured,
+            "rider_term_years": None, "waiting_period_months": 0,
+        })
+    riders += [r.model_dump() for r in request.riders]
+    spec["riders"] = riders
     return build_custom_product(spec)
 
 

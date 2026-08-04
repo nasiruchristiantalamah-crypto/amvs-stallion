@@ -663,7 +663,7 @@
             <label>Premium mode</label>
             <select id="pp-premium-mode"><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option><option value="annual">Annual</option><option value="single">Single</option></select>
           </div>
-          <div class="form-group" style="width:160px"><label>Sum assured (GHS)</label><input type="number" id="pp-sum-assured" value="5000" min="0"></div>
+          <div class="form-group" style="width:160px"><label id="pp-sum-assured-label">Sum assured (GHS)</label><input type="number" id="pp-sum-assured" value="5000" min="0" oninput="renderDependantOverrideColumns()"></div>
           <div class="form-group" style="width:110px"><label>Entry age</label><input type="number" id="pp-entry-age" value="35" min="0" max="100"></div>
           <div class="form-group" style="width:130px">
             <label>Gender</label>
@@ -672,12 +672,13 @@
         </div>
       </div>
 
-      <!-- SECTION 2: Benefit riders -->
-      <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">2⃣ Benefit riders</div>
+      <!-- SECTION 2: Additional riders -->
+      <div class="panel" style="margin-bottom:16px" id="pp-riders-panel">
+        <div class="panel-title">2⃣ Additional riders / benefits</div>
+        <div style="font-size:12.5px;color:#888;margin-bottom:10px">Sum assured (Section 1) already prices the main benefit — add riders here only for EXTRA cover on top (TPD, critical illness, hospital cash, funeral, etc.)</div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Rider name</th><th>Benefit type</th><th>Benefit amount (GHS)</th><th>Rider term (years)</th><th>Waiting period (months)</th><th></th></tr></thead>
+            <thead><tr><th>Rider name</th><th>Benefit type</th><th>Benefit amount (GHS)</th><th>Rider term (years)</th><th>Waiting period (months)</th><th>Incidence rate (%/yr)</th><th></th></tr></thead>
             <tbody id="pp-riders-body"></tbody>
           </table>
         </div>
@@ -686,7 +687,7 @@
       </div>
 
       <!-- SECTION 3: Dependants -->
-      <div class="panel" style="margin-bottom:16px">
+      <div class="panel" style="margin-bottom:16px" id="pp-dependants-panel">
         <div class="panel-title">3⃣ Dependants <span style="font-weight:normal;color:#888;font-size:12px">— up to 3</span></div>
         <div class="table-wrap">
           <table>
@@ -742,9 +743,10 @@
 
         <!-- TAB 2: Cash flow projection -->
         <div class="tab-content pp-tab-content" id="pp-tab-cashflow">
-          <div class="table-wrap">
+          <canvas id="pp-cashflow-chart" height="90"></canvas>
+          <div class="table-wrap" style="margin-top:16px">
             <table>
-              <thead><tr><th>Year</th><th>In-force</th><th>Premium income</th><th>Claims paid</th><th>Expenses</th><th>Commission</th><th>Net cash flow</th><th>Investment income</th><th>Cumulative profit</th></tr></thead>
+              <thead id="pp-cashflow-thead"></thead>
               <tbody id="pp-cashflow-body"></tbody>
             </table>
           </div>
@@ -2047,15 +2049,33 @@ const PP_BENEFIT_TYPES = [
   ['maturity', 'Maturity Benefit'], ['savings', 'Savings/Investment'],
 ];
 
+// Riders with no incidence rate at all — paid on death (mortality table
+// drives frequency) or not incidence-driven in the usual sense. Every other
+// benefit type gets an editable "incidence rate" input in its rider row.
+const PP_NO_INCIDENCE_TYPES = new Set(['death', 'funeral', 'maturity', 'savings']);
+
+// What "Sum assured" (Section 1) actually means, and prices, per product
+// type — keeps the field's label honest instead of one generic caption
+// for every category.
+const PP_SUM_ASSURED_LABELS = {
+  hospital_cash:     'Daily hospital cash benefit (GHS)',
+  medical_expense:   'Medical expense benefit (GHS)',
+  critical_illness:  'Critical illness benefit (GHS)',
+  income_protection: 'Monthly income benefit (GHS)',
+};
+
 let ppRiderRowCount = 0;
 let ppDependantRowCount = 0;
 let ppLastResult = null;
 let ppShowAllCashflowYears = false;
-let ppReserveChart = null, ppProfitChart = null, ppRateTableChart = null;
+let ppReserveChart = null, ppProfitChart = null, ppRateTableChart = null, ppCashflowChart = null;
+const PP_CASHFLOW_CHART_COLORS = ['#2E5090', '#c33', '#2a7', '#e8a33d', '#7a4fb5', '#1f9ba8'];
 
 function onProductTypeChanged() {
   const type = document.getElementById('pp-type').value;
   const warningEl = document.getElementById('pp-unsupported-warning');
+  const unsupported = PP_ANNUITY_TYPES.has(type) || PP_NONLIFE_TYPES.has(type);
+
   if (PP_ANNUITY_TYPES.has(type)) {
     warningEl.style.display = 'block';
     warningEl.innerHTML = '<strong>Annuities aren\'t supported by the pricing engine yet.</strong> ' +
@@ -2069,6 +2089,20 @@ function onProductTypeChanged() {
   } else {
     warningEl.style.display = 'none';
   }
+
+  // Unsupported types (annuities, non-life): this engine has nothing to
+  // ask for, so hide every field it can't actually price instead of
+  // leaving dead inputs on screen — just the warning above remains.
+  document.getElementById('pp-structure-fields').style.display = unsupported ? 'none' : 'flex';
+  document.getElementById('pp-riders-panel').style.display     = unsupported ? 'none' : 'block';
+  document.getElementById('pp-dependants-panel').style.display = unsupported ? 'none' : 'block';
+  document.getElementById('pp-btn-run').disabled = unsupported;
+
+  // "Sum assured" means something different per category — relabel it so
+  // the field reads correctly for health-type products instead of always
+  // saying "Sum assured" regardless of what's actually being priced.
+  const label = document.getElementById('pp-sum-assured-label');
+  label.textContent = PP_SUM_ASSURED_LABELS[type] || 'Sum assured (GHS)';
 
   // Whole Life is the only product_type with no term at all — every other
   // type needs a policy term, so force the checkbox off and enable the field.
@@ -2093,6 +2127,7 @@ function _riderRowHtml(rowId) {
     <td><input type="number" class="pp-rider-amount" value="5000" min="0" style="width:110px"></td>
     <td><input type="number" class="pp-rider-term" placeholder="= policy term" min="1" style="width:110px"></td>
     <td><input type="number" class="pp-rider-waiting" value="0" min="0" style="width:90px"></td>
+    <td><input type="number" class="pp-rider-incidence" placeholder="engine default" min="0" max="100" step="0.01" style="width:110px"></td>
     <td><button class="btn" onclick="removeRiderRow(${rowId})" title="Remove this rider">×</button></td>
   </tr>`;
 }
@@ -2100,8 +2135,7 @@ function _riderRowHtml(rowId) {
 function addRiderRow() {
   ppRiderRowCount += 1;
   document.getElementById('pp-riders-body').insertAdjacentHTML('beforeend', _riderRowHtml(ppRiderRowCount));
-  renderRiderSummary();
-  renderDependantOverrideColumns();
+  onRiderTypeChanged(ppRiderRowCount);
 }
 
 function removeRiderRow(rowId) {
@@ -2111,6 +2145,11 @@ function removeRiderRow(rowId) {
 }
 
 function onRiderTypeChanged(rowId) {
+  const row = document.querySelector(`#pp-riders-body tr[data-row-id="${rowId}"]`);
+  const type = row.querySelector('.pp-rider-type').value;
+  // Incidence rate only means something for non-mortality-driven riders —
+  // death/funeral frequency comes from the mortality table, not a typed rate.
+  row.querySelector('.pp-rider-incidence').closest('td').style.display = PP_NO_INCIDENCE_TYPES.has(type) ? 'none' : '';
   renderRiderSummary();
   renderDependantOverrideColumns();
 }
@@ -2122,13 +2161,19 @@ function collectRiders() {
     const name = row.querySelector('.pp-rider-name').value.trim();
     if (!name) return;
     const termVal = row.querySelector('.pp-rider-term').value;
-    riders.push({
+    const type = row.querySelector('.pp-rider-type').value;
+    const incidenceVal = row.querySelector('.pp-rider-incidence').value;
+    const rider = {
       name,
-      benefit_type: row.querySelector('.pp-rider-type').value,
+      benefit_type: type,
       benefit_amount: parseFloat(row.querySelector('.pp-rider-amount').value) || 0,
       rider_term_years: termVal ? parseInt(termVal) : null,
       waiting_period_months: parseInt(row.querySelector('.pp-rider-waiting').value) || 0,
-    });
+    };
+    if (incidenceVal && !PP_NO_INCIDENCE_TYPES.has(type)) {
+      rider.annual_incidence_rate = parseFloat(incidenceVal) / 100;
+    }
+    riders.push(rider);
   });
   return riders;
 }
@@ -2136,7 +2181,7 @@ function collectRiders() {
 function renderRiderSummary() {
   const riders = collectRiders();
   const el = document.getElementById('pp-riders-summary');
-  if (!riders.length) { el.textContent = 'No riders added yet — a default Death Benefit rider (sum assured) is used if none are added.'; return; }
+  if (!riders.length) { el.textContent = 'No additional riders — pricing the main benefit (sum assured) only.'; return; }
   el.textContent = riders.map(r => `${r.name} (${r.benefit_type}): GHS ${r.benefit_amount}`).join('  •  ');
 }
 
@@ -2170,8 +2215,12 @@ function removeDependantRow(rowId) {
 // Each dependant row gets one benefit-override number input PER current
 // rider, rebuilt whenever riders are added/removed/renamed so the columns
 // always match "for each rider a benefit amount override" from the spec.
+// "Main Benefit" (from Sum Assured, Section 1) isn't a row in the riders
+// table — it's synthesized server-side — so it's added here explicitly,
+// otherwise a dependant could never get their own main-benefit override.
 function renderDependantOverrideColumns() {
-  const riders = collectRiders();
+  const sumAssured = parseFloat(document.getElementById('pp-sum-assured').value) || 0;
+  const riders = sumAssured > 0 ? [{ name: 'Main Benefit' }, ...collectRiders()] : collectRiders();
   document.querySelectorAll('#pp-dependants-body tr').forEach(row => {
     const cell = row.querySelector('.pp-dep-overrides-cell');
     const existing = {};
@@ -2283,16 +2332,45 @@ function renderPricingSummaryTab(data) {
 function renderCashflowTab(data) {
   ppShowAllCashflowYears = false;
   document.getElementById('pp-cashflow-toggle').textContent = 'Show all years';
+
+  // One "Claims" column per rider actually on this product — the table
+  // (and the chart below) change shape as riders are added/removed,
+  // instead of a single lumped "Claims paid" column for everything.
+  const riderNames = data.annual_cashflow.length ? Object.keys(data.annual_cashflow[0].claims_by_rider) : [];
+  const riderHeaders = riderNames.map(n => `<th>${_escapeHtml(n)}</th>`).join('');
+  document.getElementById('pp-cashflow-thead').innerHTML =
+    `<tr><th>Year</th><th>In-force</th><th>Premium income</th>${riderHeaders}<th>Total claims</th><th>Expenses</th><th>Commission</th><th>Net cash flow</th><th>Investment income</th><th>Cumulative profit</th></tr>`;
+
   renderCashflowRows(data.annual_cashflow);
+
+  if (ppCashflowChart) ppCashflowChart.destroy();
+  ppCashflowChart = new Chart(document.getElementById('pp-cashflow-chart'), {
+    type: 'bar',
+    data: {
+      labels: data.annual_cashflow.map(r => 'Yr ' + r.policy_year),
+      datasets: riderNames.map((name, i) => ({
+        label: name,
+        data: data.annual_cashflow.map(r => r.claims_by_rider[name]),
+        backgroundColor: PP_CASHFLOW_CHART_COLORS[i % PP_CASHFLOW_CHART_COLORS.length],
+      })),
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: true }, title: { display: true, text: 'Claims paid by rider, per policy year' } },
+      scales: { x: { stacked: true }, y: { stacked: true } },
+    },
+  });
 }
 
 function renderCashflowRows(rows) {
   const shown = ppShowAllCashflowYears ? rows : rows.slice(0, 10);
+  const riderNames = rows.length ? Object.keys(rows[0].claims_by_rider) : [];
   document.getElementById('pp-cashflow-body').innerHTML = shown.map(r => `
     <tr>
       <td>${r.policy_year}</td>
       <td>${r.opening_lives.toFixed(4)}</td>
       <td>${fmt(r.premium_income)}</td>
+      ${riderNames.map(n => `<td>${fmt(r.claims_by_rider[n])}</td>`).join('')}
       <td>${fmt(r.total_claims)}</td>
       <td>${fmt(r.expenses)}</td>
       <td>${fmt(r.commission)}</td>
@@ -2463,8 +2541,10 @@ async function generateCustomAVRNote() {
   btn.disabled = false;
 }
 
-// Seed the builder with one rider row and one dependant row on first load.
-addRiderRow();
+// The riders table starts empty — Sum Assured (Section 1) already prices
+// the main benefit on its own; this table is for ADDITIONAL riders only.
+renderRiderSummary();
+renderDependantOverrideColumns();
 
 // ── IFRS 17 ──────────────────────────────────────────────────────────────────
 let lastIFRS17Request = null;   // reused by downloadIFRS17Excel() so the Excel matches what's on screen

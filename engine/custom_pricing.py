@@ -118,8 +118,16 @@ def build_custom_product(spec: Dict[str, Any]) -> Product:
         else:
             defaults = DEFAULT_MORBIDITY_RATES.get(benefit_type, {"annual_incidence_rate": 0.0010, "avg_events_per_year": 1.0})
             incidence_basis = benefit_type
-            annual_incidence_rate = defaults["annual_incidence_rate"]
-            avg_events_per_year = defaults["avg_events_per_year"]
+            # A caller-supplied rate overrides the engine default — needed
+            # whenever a client's real experience differs from the generic
+            # default (e.g. a specific product's actual hospitalisation
+            # incidence, which is rarely the same across insurers).
+            annual_incidence_rate = r.get("annual_incidence_rate")
+            if annual_incidence_rate is None:
+                annual_incidence_rate = defaults["annual_incidence_rate"]
+            avg_events_per_year = r.get("avg_events_per_year")
+            if avg_events_per_year is None:
+                avg_events_per_year = defaults["avg_events_per_year"]
 
         # "Decreasing Term" is a PRODUCT-type choice, not a per-rider field
         # in the dashboard's rider row — apply a standard straight-line
