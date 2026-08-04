@@ -48,6 +48,8 @@ What this file does:
                         class_of_business) — saving again overwrites the
                         prior note for that pair; there is no version
                         history.
+        SolvencyRun    — audit log entry for one GIRBC + legacy solvency
+                        run (engine/rbc/), mirroring ValuationRun's pattern.
 ================================================================================
 """
 
@@ -150,5 +152,29 @@ class ReservingNote(Base):
     user_id             = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     created_at          = Column(DateTime(timezone=True), default=_utcnow, nullable=False)
     updated_at          = Column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False)
+
+    user = relationship("User")
+
+
+class SolvencyRun(Base):
+    """
+    Audit log entry for one GIRBC + legacy solvency calculation
+    (engine/rbc/) — every /solvency/* run gets one row, mirroring
+    ValuationRun's pattern for pricing/reserving/ifrs17 runs. inputs_json
+    and results_json each store the FULL request/response payload exactly
+    as sent/returned, so a past run can be inspected or diffed without
+    re-running the engine — same rationale as ValuationRun.inputs/outputs.
+    """
+    __tablename__ = "solvency_runs"
+
+    id              = Column(Integer, primary_key=True, index=True)
+    client_id       = Column(String(64), nullable=False, index=True)
+    user_id         = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    valuation_date  = Column(String(32), nullable=False)   # free-text period label, e.g. "FY2025" — matches ValuationRun's own convention elsewhere
+    girbc_car       = Column(Float, nullable=True)   # null if only the legacy calc was run
+    legacy_car      = Column(Float, nullable=True)   # null if only the GIRBC calc was run
+    inputs_json     = Column(Text, nullable=False)
+    results_json    = Column(Text, nullable=False)
+    created_at      = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
 
     user = relationship("User")

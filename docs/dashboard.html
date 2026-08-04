@@ -1080,33 +1080,255 @@
     <!-- ── SOLVENCY PAGE ── -->
     <div class="page" id="page-solvency">
       <div class="page-title">Solvency</div>
-      <div class="page-subtitle">Capital adequacy ratio (CAR) and GIRBC risk module capital charges.</div>
+      <div class="page-subtitle">GIRBC risk-based capital adequacy ratio, legacy solvency margin (transition basis), and prescribed stress tests.</div>
       <div class="page-header-divider"></div>
 
+      <!-- ── Client / date selection ── -->
       <div class="panel" style="margin-bottom:14px">
-        <div class="panel-title">Valuation inputs</div>
+        <div class="panel-title">Client and valuation date</div>
         <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end">
-          <div class="form-group" style="width:200px"><label>Company name</label><input type="text" id="sv-company" value="Quality Insurance PLC"></div>
-          <div class="form-group" style="width:140px"><label>In-force policies</label><input type="number" id="sv-count" value="500" min="1"></div>
-          <div class="form-group" style="width:110px"><label>Entry age</label><input type="number" id="sv-age" value="35" min="18" max="70"></div>
-          <div class="form-group" style="width:150px"><label>Product tier</label>
-            <select id="sv-tier"><option value="1">Tier 1 — Basic</option><option value="2">Tier 2 — Standard</option><option value="3">Tier 3 — Premium</option></select>
+          <div class="form-group" style="width:240px"><label>Client</label>
+            <select id="sv-client-select"></select>
           </div>
-          <button class="btn btn-gold" onclick="runSolvency()" id="btn-sv-run">Run solvency check</button>
+          <div class="form-group" style="width:140px"><label>Valuation date</label><input type="text" id="sv-valuation-date" value="FY2025"></div>
+          <button class="btn btn-primary" onclick="loadSolvencyFromClientData()" id="btn-sv-load-client">Load from client data</button>
+          <button class="btn btn-primary" onclick="loadSolvencyFromReserving()" id="btn-sv-load-reserving">Load from reserving</button>
+          <button class="btn btn-gold" onclick="runSolvencyFull()" id="btn-sv-run">Run solvency calculation</button>
+        </div>
+        <div class="muted-text" style="margin-top:8px" id="sv-load-status"></div>
+      </div>
+
+      <!-- ── Panel 1: Qualifying Capital Resources ── -->
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title" style="cursor:pointer;display:flex;justify-content:space-between" onclick="toggleSvPanel('capital')">
+          <span>Panel 1 — Qualifying Capital Resources</span><span id="sv-panel-capital-chevron">&#9662;</span>
+        </div>
+        <div id="sv-panel-capital-body">
+          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:10px">
+            <div class="form-group" style="width:200px"><label>Tier 1 Unlimited (gross)</label><input type="number" id="sv-cap-tier1u" value="0"></div>
+            <div class="form-group" style="width:200px"><label>Tier 1 Unlimited deductions</label><input type="number" id="sv-cap-tier1u-ded" value="0"></div>
+            <div class="form-group" style="width:200px"><label>Tier 1 Limited (gross)</label><input type="number" id="sv-cap-tier1l" value="0"></div>
+            <div class="form-group" style="width:200px"><label>Tier 2 (gross)</label><input type="number" id="sv-cap-tier2" value="0"></div>
+            <div class="form-group" style="width:200px"><label>Tier 2 amortisation</label><input type="number" id="sv-cap-tier2-amort" value="0"></div>
+          </div>
         </div>
       </div>
 
+      <!-- ── Panel 2: Insurance Risk Exposures ── -->
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title" style="cursor:pointer;display:flex;justify-content:space-between" onclick="toggleSvPanel('insurance')">
+          <span>Panel 2 — Insurance Risk Exposures</span><span id="sv-panel-insurance-chevron">&#9662;</span>
+        </div>
+        <div id="sv-panel-insurance-body">
+          <div class="form-group" style="width:260px;margin-bottom:10px"><label>Net non-life insurance revenue (Catastrophe base)</label><input type="number" id="sv-ins-revenue" value="0"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Class</th><th>Net Premium</th><th>Net Claims Reserve</th></tr></thead>
+              <tbody id="sv-ins-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Panel 3: Market Risk Exposures ── -->
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title" style="cursor:pointer;display:flex;justify-content:space-between" onclick="toggleSvPanel('market')">
+          <span>Panel 3 — Market Risk Exposures</span><span id="sv-panel-market-chevron">&#9662;</span>
+        </div>
+        <div id="sv-panel-market-body">
+          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:10px">
+            <div class="form-group" style="width:220px"><label>Interest rate sensitive assets</label><input type="number" id="sv-mkt-ir-assets" value="0"></div>
+            <div class="form-group" style="width:220px"><label>Interest rate sensitive liabilities</label><input type="number" id="sv-mkt-ir-liabilities" value="0"></div>
+          </div>
+          <div class="section-title2" style="margin-bottom:6px">Equities (7 categories)</div>
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table><thead><tr><th>Category</th><th>Amount</th></tr></thead><tbody id="sv-mkt-equity-body"></tbody></table>
+          </div>
+          <div class="section-title2" style="margin-bottom:6px">Real Estate</div>
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table><thead><tr><th>Category</th><th>Amount</th></tr></thead><tbody id="sv-mkt-realestate-body"></tbody></table>
+          </div>
+          <div class="section-title2" style="margin-bottom:6px">Right-of-Use Assets</div>
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table><thead><tr><th>Category</th><th>Amount</th></tr></thead><tbody id="sv-mkt-rou-body"></tbody></table>
+          </div>
+          <div class="section-title2" style="margin-bottom:6px">FX Net Open Positions</div>
+          <div class="table-wrap">
+            <table><thead><tr><th>Currency</th><th>Net Open Position</th><th></th></tr></thead><tbody id="sv-mkt-fx-body"></tbody></table>
+          </div>
+          <button class="btn btn-primary" style="margin-top:10px" onclick="addSvFxRow()">+ Add currency</button>
+        </div>
+      </div>
+
+      <!-- ── Panel 4: Credit Risk Exposures ── -->
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title" style="cursor:pointer;display:flex;justify-content:space-between" onclick="toggleSvPanel('credit')">
+          <span>Panel 4 — Credit Risk Exposures</span><span id="sv-panel-credit-chevron">&#9662;</span>
+        </div>
+        <div id="sv-panel-credit-body">
+          <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:14px">
+            <div class="form-group" style="width:190px"><label>Cash and deposits</label><input type="number" id="sv-cred-cash" value="0"></div>
+            <div class="form-group" style="width:190px"><label>Premium receivables</label><input type="number" id="sv-cred-premrec" value="0"></div>
+            <div class="form-group" style="width:190px"><label>RI recoverables (unrated)</label><input type="number" id="sv-cred-ri" value="0"></div>
+            <div class="form-group" style="width:190px"><label>Mandatory pool recoverables</label><input type="number" id="sv-cred-pool" value="0"></div>
+            <div class="form-group" style="width:190px"><label>Deferred tax assets</label><input type="number" id="sv-cred-dta" value="0"></div>
+            <div class="form-group" style="width:190px"><label>Related party loans</label><input type="number" id="sv-cred-rpl" value="0"></div>
+            <div class="form-group" style="width:190px"><label>Other receivables</label><input type="number" id="sv-cred-other" value="0"></div>
+          </div>
+          <div class="section-title2" style="margin-bottom:6px">Counterparty Exposures (by rating)</div>
+          <div class="table-wrap" style="margin-bottom:10px">
+            <table><thead><tr><th>Amount</th><th>Rating</th><th></th></tr></thead><tbody id="sv-cred-counterparty-body"></tbody></table>
+          </div>
+          <button class="btn btn-primary" onclick="addSvCounterpartyRow()">+ Add counterparty exposure</button>
+
+          <div class="section-title2" style="margin:14px 0 6px">Mortgage Exposures (by LTV band)</div>
+          <div class="table-wrap" style="margin-bottom:10px">
+            <table><thead><tr><th>Amount</th><th>LTV Band</th><th></th></tr></thead><tbody id="sv-cred-mortgage-body"></tbody></table>
+          </div>
+          <button class="btn btn-primary" onclick="addSvMortgageRow()">+ Add mortgage exposure</button>
+        </div>
+      </div>
+
+      <!-- ── Results: 8 tabs ── -->
       <div id="sv-results" style="display:none">
-        <div class="alert alert-success" id="sv-alert-ok"></div>
-        <div class="alert alert-danger" id="sv-alert-breach"></div>
-        <div class="results-grid">
-          <div class="result-block">
-            <div class="result-block-title">Capital adequacy ratio</div>
-            <div class="result-row"><span class="result-label">Available capital</span><span class="result-value" id="sv-avcap">—</span></div>
-            <div class="result-row"><span class="result-label">Required capital (SCR)</span><span class="result-value" id="sv-reqcap">—</span></div>
-            <div class="result-row"><span class="result-label">Surplus / (deficit)</span><span class="result-value" id="sv-surplus">—</span></div>
-            <div class="result-row"><span class="result-label">Capital adequacy ratio</span><span class="result-value" id="sv-car" style="font-size:15px">—</span></div>
-            <div class="result-row"><span class="result-label">Solvency status</span><span class="result-value" id="sv-status">—</span></div>
+        <div class="tab-bar">
+          <div class="tab sv-tab active" data-tab="summary" onclick="showSolvencyTab('summary',this)">Capital Adequacy Summary</div>
+          <div class="tab sv-tab" data-tab="scr" onclick="showSolvencyTab('scr',this)">SCR Breakdown</div>
+          <div class="tab sv-tab" data-tab="insurance" onclick="showSolvencyTab('insurance',this)">Insurance Risk Detail</div>
+          <div class="tab sv-tab" data-tab="market" onclick="showSolvencyTab('market',this)">Market Risk Detail</div>
+          <div class="tab sv-tab" data-tab="credit" onclick="showSolvencyTab('credit',this)">Credit Risk Detail</div>
+          <div class="tab sv-tab" data-tab="composition" onclick="showSolvencyTab('composition',this)">Capital Composition</div>
+          <div class="tab sv-tab" data-tab="stress" onclick="showSolvencyTab('stress',this)">Stress Tests</div>
+          <div class="tab sv-tab" data-tab="certificate" onclick="showSolvencyTab('certificate',this)">GIRBC Certificate</div>
+        </div>
+
+        <!-- Tab 1: Capital Adequacy Summary -->
+        <div class="tab-content sv-tab-content active" id="sv-tab-summary">
+          <div class="panel" style="margin-bottom:14px" id="sv-status-banner">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:20px">
+              <div>
+                <div class="label-text">GIRBC Capital Adequacy Ratio</div>
+                <div id="sv-car-big" style="font-size:38px;font-weight:700;color:#1F3864">—</div>
+                <div class="muted-text">Legacy margin test (transition basis): <span id="sv-legacy-car">—</span></div>
+              </div>
+              <div style="text-align:right">
+                <div class="label-text">Solvency Status</div>
+                <div id="sv-status-badge" class="badge" style="font-size:14px;padding:6px 14px">—</div>
+                <div class="muted-text" style="margin-top:6px" id="sv-floor-note">—</div>
+              </div>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <tbody>
+                <tr><td class="label-text">Total Qualifying Capital Resources (QCR)</td><td class="data-value-text" id="sv-sum-qcr">—</td></tr>
+                <tr><td class="label-text">Minimum Capital Requirement (MCR)</td><td class="data-value-text" id="sv-sum-mcr">—</td></tr>
+                <tr><td class="label-text">Prescribed Capital Requirement (PCR)</td><td class="data-value-text" id="sv-sum-pcr">—</td></tr>
+                <tr><td class="label-text">Surplus / (Deficit) vs MCR</td><td class="data-value-text" id="sv-sum-surplus">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 2: SCR Breakdown -->
+        <div class="tab-content sv-tab-content" id="sv-tab-scr">
+          <div style="display:flex;gap:24px;flex-wrap:wrap">
+            <div class="table-wrap" style="flex:1;min-width:340px">
+              <table>
+                <thead><tr><th>Risk Module</th><th>Charge</th></tr></thead>
+                <tbody id="sv-scr-body"></tbody>
+              </table>
+            </div>
+            <div style="flex:0 0 320px">
+              <canvas id="sv-scr-pie-chart" width="320" height="320"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 3: Insurance Risk Detail -->
+        <div class="tab-content sv-tab-content" id="sv-tab-insurance">
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table>
+              <thead><tr><th>Class</th><th>Segment</th><th>Net Premium</th><th>Premium Charge</th><th>Net Reserve</th><th>Reserve Charge</th><th>Combined Charge</th></tr></thead>
+              <tbody id="sv-ins-detail-body"></tbody>
+            </table>
+          </div>
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table><thead><tr><th>Segment</th><th>Classes</th><th>Segment Charge</th></tr></thead><tbody id="sv-ins-segment-body"></tbody></table>
+          </div>
+          <div class="table-wrap">
+            <table><tbody>
+              <tr><td class="label-text">Insurance Risk (before Catastrophe)</td><td class="data-value-text" id="sv-ins-before-cat">—</td></tr>
+              <tr><td class="label-text">Catastrophe Charge</td><td class="data-value-text" id="sv-ins-cat">—</td></tr>
+            </tbody></table>
+          </div>
+        </div>
+
+        <!-- Tab 4: Market Risk Detail -->
+        <div class="tab-content sv-tab-content" id="sv-tab-market">
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table>
+              <thead><tr><th>Sub-Module</th><th>Charge</th></tr></thead>
+              <tbody id="sv-mkt-detail-body"></tbody>
+            </table>
+          </div>
+          <div class="muted-text" id="sv-mkt-diversification">—</div>
+        </div>
+
+        <!-- Tab 5: Credit Risk Detail -->
+        <div class="tab-content sv-tab-content" id="sv-tab-credit">
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table><thead><tr><th>Counterparty Rating</th><th>Charge</th></tr></thead><tbody id="sv-cred-detail-counterparty-body"></tbody></table>
+          </div>
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table><thead><tr><th>LTV Band</th><th>Charge</th></tr></thead><tbody id="sv-cred-detail-mortgage-body"></tbody></table>
+          </div>
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table><thead><tr><th>Other Exposure</th><th>Charge</th></tr></thead><tbody id="sv-cred-detail-other-body"></tbody></table>
+          </div>
+          <div class="table-wrap"><table><tbody>
+            <tr><td class="label-text">Total Credit Risk Charge</td><td class="data-value-text" id="sv-cred-total">—</td></tr>
+          </tbody></table></div>
+        </div>
+
+        <!-- Tab 6: Capital Composition -->
+        <div class="tab-content sv-tab-content" id="sv-tab-composition">
+          <div class="table-wrap" style="margin-bottom:14px">
+            <table>
+              <thead><tr><th>Component</th><th>Amount</th></tr></thead>
+              <tbody id="sv-comp-body"></tbody>
+            </table>
+          </div>
+          <div class="panel" id="sv-comp-traffic-light">
+            <div class="label-text">Composition Compliance</div>
+            <div id="sv-comp-status" style="font-size:15px;font-weight:700;margin-top:6px">—</div>
+          </div>
+        </div>
+
+        <!-- Tab 7: Stress Tests -->
+        <div class="tab-content sv-tab-content" id="sv-tab-stress">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Scenario</th><th>Description</th><th>Stressed CAR</th><th>Status</th><th>Result</th><th>Change vs Base</th></tr></thead>
+              <tbody id="sv-stress-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 8: GIRBC Certificate -->
+        <div class="tab-content sv-tab-content" id="sv-tab-certificate">
+          <div class="panel">
+            <div class="panel-title">Solvency Certificate</div>
+            <p class="data-value-text" style="margin-bottom:12px">
+              A formatted GIRBC solvency certificate — capital adequacy summary, risk module breakdown, capital
+              composition, stress test results, actuarial opinion, and signature block — matching NIC requirements.
+            </p>
+            <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:12px">
+              <div class="form-group" style="width:220px"><label>Appointed actuary</label><input type="text" id="sv-cert-actuary" value="Charles Osei-Akoto"></div>
+              <div class="form-group" style="width:260px"><label>Qualifications</label><input type="text" id="sv-cert-qual" value="Fellow, Institute and Faculty of Actuaries (FIA)"></div>
+              <div class="form-group" style="width:220px"><label>Consulting firm</label><input type="text" id="sv-cert-firm" value="Stallion Consultants Ltd"></div>
+            </div>
+            <button class="btn btn-gold" onclick="downloadSolvencyCertificate()" id="btn-sv-cert-download">Download GIRBC Certificate (Word)</button>
           </div>
         </div>
       </div>
@@ -1478,6 +1700,7 @@ const PAGE_ON_SHOWN = {
   assumptionsets:  () => loadAssumptionSetsAdmin(),
   audittrail:      () => loadAuditTrail(),
   reserving:       () => loadReservingClients(),
+  solvency:        () => loadSolvencyClients(),
 };
 
 function navigateTo(pageId, groupLabel, itemLabel, el) {
@@ -2792,45 +3015,401 @@ async function runIfrs17NonLife() {
   btn.disabled = false;
 }
 
-// ── Solvency ─────────────────────────────────────────────────────────────
-async function runSolvency() {
+// ── Solvency (GIRBC risk-based capital + legacy margin test) ────────────────
+// engine/rbc/ — see POST /solvency/full. Every number here traces to that
+// engine; this file only collects inputs, renders results, and downloads
+// the certificate — no calculation happens client-side.
+
+const SV_NON_LIFE_CLASSES = ["Motor", "Fire", "Accident", "Marine", "Engineering", "Liability", "Bond", "Aviation", "Travel", "Weather", "Miscellaneous"];
+const SV_EQUITY_CATEGORIES = [
+  ["domestic", "Domestic Listed (GSE)"], ["foreign_developed", "Foreign Developed Markets"],
+  ["foreign_emerging", "Foreign Emerging Markets"], ["unlisted", "Unlisted / Other Equity"],
+  ["hybrid_debt", "Hybrid Debt Instruments"], ["related_party_regulated", "Related Party (Regulated FI)"],
+  ["related_party_unregulated", "Related Party (Unregulated FI)"],
+];
+const SV_REAL_ESTATE_CATEGORIES = [["domestic", "Domestic Property"], ["foreign", "Foreign Property"]];
+const SV_ROU_CATEGORIES = [["owner_occupied", "Owner-Occupied"], ["other_assets", "Other Assets"], ["investment_property", "Investment Property"]];
+const SV_RATING_BANDS = ["RC1", "RC2", "RC3", "RC4", "RC5", "RC6", "RC7", "Unrated", "Default"];
+const SV_LTV_BANDS = ["<50%", "50-60%", "60-70%", "70-80%", "80-90%", ">90%"];
+
+let svFxRowCount = 0, svCounterpartyRowCount = 0, svMortgageRowCount = 0;
+let svLastResult = null;   // the full /solvency/full response — cached so tab switches don't need a re-fetch
+
+function toggleSvPanel(name) {
+  const body = document.getElementById('sv-panel-' + name + '-body');
+  const chevron = document.getElementById('sv-panel-' + name + '-chevron');
+  const collapsed = body.style.display === 'none';
+  body.style.display = collapsed ? '' : 'none';
+  chevron.innerHTML = collapsed ? '&#9662;' : '&#9656;';
+}
+
+async function loadSolvencyClients() {
+  const sel = document.getElementById('sv-client-select');
+  if (sel.dataset.loaded !== '1') {
+    try {
+      const r = await apiFetch('/clients');
+      const d = await r.json();
+      sel.innerHTML = d.success ? d.data.map(c => `<option value="${_escapeHtml(c.client_id)}">${_escapeHtml(c.name)}</option>`).join('') : '<option value="pic">Provident Insurance (PIC)</option>';
+    } catch (e) {
+      sel.innerHTML = '<option value="pic">Provident Insurance (PIC)</option>';
+    }
+    sel.dataset.loaded = '1';
+  }
+  if (document.getElementById('sv-ins-body').children.length === 0) renderSvStaticInputRows();
+}
+
+function renderSvStaticInputRows() {
+  document.getElementById('sv-ins-body').innerHTML = SV_NON_LIFE_CLASSES.map(cls => `
+    <tr><td><strong>${cls}</strong></td>
+      <td><input type="number" class="sv-ins-premium" data-class="${cls}" value="0" style="width:150px"></td>
+      <td><input type="number" class="sv-ins-reserve" data-class="${cls}" value="0" style="width:150px"></td>
+    </tr>`).join('');
+
+  document.getElementById('sv-mkt-equity-body').innerHTML = SV_EQUITY_CATEGORIES.map(([k, label]) => `
+    <tr><td>${label}</td><td><input type="number" class="sv-mkt-equity" data-cat="${k}" value="0" style="width:180px"></td></tr>`).join('');
+  document.getElementById('sv-mkt-realestate-body').innerHTML = SV_REAL_ESTATE_CATEGORIES.map(([k, label]) => `
+    <tr><td>${label}</td><td><input type="number" class="sv-mkt-realestate" data-cat="${k}" value="0" style="width:180px"></td></tr>`).join('');
+  document.getElementById('sv-mkt-rou-body').innerHTML = SV_ROU_CATEGORIES.map(([k, label]) => `
+    <tr><td>${label}</td><td><input type="number" class="sv-mkt-rou" data-cat="${k}" value="0" style="width:180px"></td></tr>`).join('');
+}
+
+function addSvFxRow(currency, amount) {
+  svFxRowCount += 1;
+  const id = svFxRowCount;
+  document.getElementById('sv-mkt-fx-body').insertAdjacentHTML('beforeend', `
+    <tr data-row-id="${id}">
+      <td><input type="text" class="sv-fx-currency" value="${currency || ''}" placeholder="e.g. USD" style="width:100px"></td>
+      <td><input type="number" class="sv-fx-amount" value="${amount != null ? amount : 0}" style="width:160px"></td>
+      <td><button class="btn" onclick="this.closest('tr').remove()" title="Remove">×</button></td>
+    </tr>`);
+}
+
+function addSvCounterpartyRow(amount, rating) {
+  svCounterpartyRowCount += 1;
+  const options = SV_RATING_BANDS.map(r => `<option value="${r}" ${r === rating ? 'selected' : ''}>${r}</option>`).join('');
+  document.getElementById('sv-cred-counterparty-body').insertAdjacentHTML('beforeend', `
+    <tr data-row-id="${svCounterpartyRowCount}">
+      <td><input type="number" class="sv-counterparty-amount" value="${amount != null ? amount : 0}" style="width:160px"></td>
+      <td><select class="sv-counterparty-rating" style="width:120px">${options}</select></td>
+      <td><button class="btn" onclick="this.closest('tr').remove()" title="Remove">×</button></td>
+    </tr>`);
+}
+
+function addSvMortgageRow(amount, band) {
+  svMortgageRowCount += 1;
+  const options = SV_LTV_BANDS.map(b => `<option value="${b}" ${b === band ? 'selected' : ''}>${b}</option>`).join('');
+  document.getElementById('sv-cred-mortgage-body').insertAdjacentHTML('beforeend', `
+    <tr data-row-id="${svMortgageRowCount}">
+      <td><input type="number" class="sv-mortgage-amount" value="${amount != null ? amount : 0}" style="width:160px"></td>
+      <td><select class="sv-mortgage-band" style="width:120px">${options}</select></td>
+      <td><button class="btn" onclick="this.closest('tr').remove()" title="Remove">×</button></td>
+    </tr>`);
+}
+
+function _svDictFromRows(selector) {
+  const out = {};
+  document.querySelectorAll(selector).forEach(el => {
+    const v = parseFloat(el.value);
+    if (v) out[el.dataset.cat || el.dataset.class] = v;
+  });
+  return out;
+}
+
+function collectSolvencyPayload() {
+  const counterparty_exposures = [];
+  document.querySelectorAll('#sv-cred-counterparty-body tr').forEach(tr => {
+    const amount = parseFloat(tr.querySelector('.sv-counterparty-amount').value);
+    if (amount) counterparty_exposures.push({ amount, category: tr.querySelector('.sv-counterparty-rating').value });
+  });
+  const mortgage_exposures = [];
+  document.querySelectorAll('#sv-cred-mortgage-body tr').forEach(tr => {
+    const amount = parseFloat(tr.querySelector('.sv-mortgage-amount').value);
+    if (amount) mortgage_exposures.push({ amount, category: tr.querySelector('.sv-mortgage-band').value });
+  });
+  const fx_net_open_position = {};
+  document.querySelectorAll('#sv-mkt-fx-body tr').forEach(tr => {
+    const ccy = tr.querySelector('.sv-fx-currency').value.trim();
+    const amt = parseFloat(tr.querySelector('.sv-fx-amount').value);
+    if (ccy && amt) fx_net_open_position[ccy] = amt;
+  });
+
+  return {
+    client_id: document.getElementById('sv-client-select').value,
+    valuation_date: document.getElementById('sv-valuation-date').value || 'FY2025',
+    capital_resources: {
+      tier1_unlimited: parseFloat(document.getElementById('sv-cap-tier1u').value) || 0,
+      tier1_unlimited_deductions: parseFloat(document.getElementById('sv-cap-tier1u-ded').value) || 0,
+      tier1_limited: parseFloat(document.getElementById('sv-cap-tier1l').value) || 0,
+      tier2: parseFloat(document.getElementById('sv-cap-tier2').value) || 0,
+      tier2_amortisation: parseFloat(document.getElementById('sv-cap-tier2-amort').value) || 0,
+    },
+    insurance_risk: {
+      net_premium: _svDictFromRows('.sv-ins-premium'),
+      net_claims_reserve: _svDictFromRows('.sv-ins-reserve'),
+    },
+    net_non_life_insurance_revenue: parseFloat(document.getElementById('sv-ins-revenue').value) || 0,
+    market_risk: {
+      listed_equities: _svDictFromRows('.sv-mkt-equity'),
+      real_estate: _svDictFromRows('.sv-mkt-realestate'),
+      right_of_use_assets: _svDictFromRows('.sv-mkt-rou'),
+      fx_net_open_position,
+      interest_rate_sensitive_assets: parseFloat(document.getElementById('sv-mkt-ir-assets').value) || 0,
+      interest_rate_sensitive_liabilities: parseFloat(document.getElementById('sv-mkt-ir-liabilities').value) || 0,
+    },
+    credit_risk: {
+      counterparty_exposures, mortgage_exposures,
+      cash_and_deposits: parseFloat(document.getElementById('sv-cred-cash').value) || 0,
+      premium_receivables: parseFloat(document.getElementById('sv-cred-premrec').value) || 0,
+      reinsurance_recoverables: parseFloat(document.getElementById('sv-cred-ri').value) || 0,
+      mandatory_pool_recoverables: parseFloat(document.getElementById('sv-cred-pool').value) || 0,
+      deferred_tax_assets: parseFloat(document.getElementById('sv-cred-dta').value) || 0,
+      related_party_loans: parseFloat(document.getElementById('sv-cred-rpl').value) || 0,
+      other_receivables: parseFloat(document.getElementById('sv-cred-other').value) || 0,
+    },
+    operational_risk: {
+      current_year_net_premium: parseFloat(document.getElementById('sv-ins-revenue').value) || 0,
+      prior_year_net_premium: svLastResult?._opPriorPremium || 0,
+      current_year_net_liabilities: 0,
+      prior_year_net_liabilities: 0,
+    },
+  };
+}
+
+function _svFillFromRawInputs(raw) {
+  document.getElementById('sv-cap-tier1u').value = raw.capital_resources.tier1_unlimited;
+  document.getElementById('sv-cap-tier1u-ded').value = raw.capital_resources.tier1_unlimited_deductions;
+  document.getElementById('sv-cap-tier1l').value = raw.capital_resources.tier1_limited;
+  document.getElementById('sv-cap-tier2').value = raw.capital_resources.tier2;
+  document.getElementById('sv-cap-tier2-amort').value = raw.capital_resources.tier2_amortisation;
+
+  document.getElementById('sv-ins-revenue').value = raw.net_non_life_insurance_revenue;
+  document.querySelectorAll('.sv-ins-premium').forEach(el => { el.value = raw.insurance_risk.net_premium[el.dataset.class] || 0; });
+  document.querySelectorAll('.sv-ins-reserve').forEach(el => { el.value = raw.insurance_risk.net_claims_reserve[el.dataset.class] || 0; });
+
+  document.getElementById('sv-mkt-ir-assets').value = raw.market_risk.interest_rate_sensitive_assets;
+  document.getElementById('sv-mkt-ir-liabilities').value = raw.market_risk.interest_rate_sensitive_liabilities;
+  document.querySelectorAll('.sv-mkt-equity').forEach(el => { el.value = raw.market_risk.listed_equities[el.dataset.cat] || 0; });
+  document.querySelectorAll('.sv-mkt-realestate').forEach(el => { el.value = raw.market_risk.real_estate[el.dataset.cat] || 0; });
+  document.querySelectorAll('.sv-mkt-rou').forEach(el => { el.value = raw.market_risk.right_of_use_assets[el.dataset.cat] || 0; });
+  document.getElementById('sv-mkt-fx-body').innerHTML = '';
+  Object.entries(raw.market_risk.fx_net_open_position || {}).forEach(([ccy, amt]) => addSvFxRow(ccy, amt));
+
+  document.getElementById('sv-cred-cash').value = raw.credit_risk.cash_and_deposits;
+  document.getElementById('sv-cred-premrec').value = raw.credit_risk.premium_receivables;
+  document.getElementById('sv-cred-ri').value = raw.credit_risk.reinsurance_recoverables;
+  document.getElementById('sv-cred-pool').value = raw.credit_risk.mandatory_pool_recoverables;
+  document.getElementById('sv-cred-dta').value = raw.credit_risk.deferred_tax_assets;
+  document.getElementById('sv-cred-rpl').value = raw.credit_risk.related_party_loans;
+  document.getElementById('sv-cred-other').value = raw.credit_risk.other_receivables;
+  document.getElementById('sv-cred-counterparty-body').innerHTML = '';
+  (raw.credit_risk.counterparty_exposures || []).forEach(e => addSvCounterpartyRow(e.amount, e.category));
+  document.getElementById('sv-cred-mortgage-body').innerHTML = '';
+  (raw.credit_risk.mortgage_exposures || []).forEach(e => addSvMortgageRow(e.amount, e.category));
+
+  svLastResult = svLastResult || {};
+  svLastResult._opPriorPremium = raw.operational_risk.prior_year_net_premium;
+}
+
+async function loadSolvencyFromClientData() {
+  const clientId = document.getElementById('sv-client-select').value;
+  const statusEl = document.getElementById('sv-load-status');
+  statusEl.innerHTML = '<span class="spinner spinner-dark"></span> Loading real client workbook data...';
+  try {
+    const r = await apiFetch('/solvency/raw-inputs/' + encodeURIComponent(clientId));
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    _svFillFromRawInputs(d.data);
+    statusEl.innerHTML = `<span style="color:#2a7">Loaded real exposure data for ${_escapeHtml(clientId)}. Review inputs below, then click "Run solvency calculation".</span>`;
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
+  }
+}
+
+async function loadSolvencyFromReserving() {
+  const clientId = document.getElementById('sv-client-select').value;
+  const statusEl = document.getElementById('sv-load-status');
+  statusEl.innerHTML = '<span class="spinner spinner-dark"></span> Loading net claims reserve from the last reserving run...';
+  try {
+    const r = await apiFetch('/reserving/nic-summary?client_id=' + encodeURIComponent(clientId));
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    // 4-class reserving output (Motor/Fire/Accident/Others) mapped onto the
+    // 11-class insurance-risk taxonomy — Others -> Miscellaneous, the rest
+    // (Marine/Engineering/Liability/Bond/Aviation/Travel/Weather) are not
+    // separately produced by reserving and are left as-is.
+    const mapping = { Motor: 'Motor', Fire: 'Fire', Accident: 'Accident', Others: 'Miscellaneous' };
+    Object.entries(mapping).forEach(([reservingClass, svClass]) => {
+      const reserve = (d.data.by_class[reservingClass]?.net?.ibnr || 0) + (d.data.by_class[reservingClass]?.net?.ocr || 0);
+      const el = document.querySelector(`.sv-ins-reserve[data-class="${svClass}"]`);
+      if (el) el.value = Math.round(reserve * 100) / 100;
+    });
+    statusEl.innerHTML = `<span style="color:#2a7">Net claims reserve populated from the latest reserving run (Motor/Fire/Accident -> Others mapped to Miscellaneous).</span>`;
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
+  }
+}
+
+function showSolvencyTab(id, el) {
+  document.querySelectorAll('.sv-tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.sv-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('sv-tab-' + id).classList.add('active');
+  el.classList.add('active');
+  if (id === 'scr' && svLastResult) renderSvScrPieChart(svLastResult.girbc);
+}
+
+async function runSolvencyFull() {
   const btn = document.getElementById('btn-sv-run');
   const original = btn.innerHTML;
   btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
   btn.disabled = true;
   try {
-    const body = {
-      company_name: document.getElementById('sv-company').value,
-      period: 'FY2025', reporting_freq: 'annual',
-      in_force_count: parseInt(document.getElementById('sv-count').value),
-      entry_age: parseInt(document.getElementById('sv-age').value),
-      tier: parseInt(document.getElementById('sv-tier').value),
-      product_type: 'whole_life',
-    };
-    const r = await apiFetch('/ifrs17', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const payload = collectSolvencyPayload();
+    const r = await apiFetch('/solvency/full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const d = await r.json();
     if (!d.success) throw new Error(d.detail);
-    const s = d.data.solvency;
-    document.getElementById('sv-avcap').textContent  = 'GHS ' + fmt(s.available_capital);
-    document.getElementById('sv-reqcap').textContent = 'GHS ' + fmt(s.required_capital);
-    document.getElementById('sv-surplus').textContent = 'GHS ' + fmt(s.available_capital - s.required_capital);
-    document.getElementById('sv-car').textContent = pct(s.capital_adequacy_ratio);
-    document.getElementById('sv-car').className = 'result-value ' + (s.is_solvent ? 'good' : 'bad');
-    document.getElementById('sv-status').textContent = s.is_solvent ? 'Solvent' : 'Capital breach';
-    document.getElementById('sv-status').className = 'result-value ' + (s.is_solvent ? 'good' : 'bad');
-
-    const okAlert = document.getElementById('sv-alert-ok');
-    const breachAlert = document.getElementById('sv-alert-breach');
-    if (s.is_solvent) {
-      okAlert.textContent = `Company is SOLVENT — CAR of ${pct(s.capital_adequacy_ratio)} exceeds the 100% minimum requirement.`;
-      okAlert.style.display = 'flex'; breachAlert.style.display = 'none';
-    } else {
-      breachAlert.textContent = `CAPITAL BREACH — CAR of ${pct(s.capital_adequacy_ratio)} is below the 100% minimum.`;
-      breachAlert.style.display = 'flex'; okAlert.style.display = 'none';
-    }
+    svLastResult = d.data;
+    svLastResult._opPriorPremium = payload.operational_risk.prior_year_net_premium;
+    svLastResult._payload = payload;
+    renderSolvencyResults(d.data, payload);
     document.getElementById('sv-results').style.display = 'block';
   } catch (e) {
     alert('Error: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+function renderSolvencyResults(data, payload) {
+  const g = data.girbc, legacy = data.legacy;
+
+  // Tab 1: Capital Adequacy Summary
+  document.getElementById('sv-car-big').textContent = pct(g.car);
+  document.getElementById('sv-car-big').style.color = g.status === 'BREACH' ? '#c33' : (g.status === 'STRONG' ? '#2a7' : '#1F3864');
+  document.getElementById('sv-legacy-car').textContent = legacy ? `${pct(legacy.legacy_car)} — ${legacy.status}` : 'not available for this client';
+  const statusBadge = document.getElementById('sv-status-badge');
+  statusBadge.textContent = g.status;
+  statusBadge.className = 'badge' + (g.status === 'BREACH' ? '' : '') ;
+  statusBadge.style.background = g.status === 'STRONG' ? '#E7F0E9' : (g.status === 'BREACH' ? '#FCE8E6' : '#FBF2DC');
+  statusBadge.style.color = g.status === 'STRONG' ? '#2C5233' : (g.status === 'BREACH' ? '#c62828' : '#6B5313');
+  const floorBinds = Math.abs(g.mcr - (g.overall_risk_charge / 1.5)) > 0.01;
+  document.getElementById('sv-floor-note').textContent = floorBinds
+    ? 'GHS 50,000,000 fixed floor is binding' : 'Risk-based charge is binding (above the fixed floor)';
+  document.getElementById('sv-sum-qcr').textContent = 'GHS ' + fmt(g.total_qcr);
+  document.getElementById('sv-sum-mcr').textContent = 'GHS ' + fmt(g.mcr);
+  document.getElementById('sv-sum-pcr').textContent = 'GHS ' + fmt(g.pcr);
+  document.getElementById('sv-sum-surplus').textContent = 'GHS ' + fmt(g.total_qcr - g.mcr);
+
+  // Tab 2: SCR Breakdown
+  const naiveSum = g.insurance_risk.insurance_risk_before_cat + g.insurance_risk.catastrophe_charge + g.market_risk.total_market_risk_scr + g.credit_risk.total_credit_risk_scr;
+  const diversification = naiveSum - g.overall_risk_charge_before_operational;
+  document.getElementById('sv-scr-body').innerHTML = `
+    <tr><td>Insurance Risk (excl. Catastrophe)</td><td>GHS ${fmt(g.insurance_risk.insurance_risk_before_cat)}</td></tr>
+    <tr><td>Catastrophe Risk</td><td>GHS ${fmt(g.insurance_risk.catastrophe_charge)}</td></tr>
+    <tr><td>Market Risk</td><td>GHS ${fmt(g.market_risk.total_market_risk_scr)}</td></tr>
+    <tr><td>Credit Risk</td><td>GHS ${fmt(g.credit_risk.total_credit_risk_scr)}</td></tr>
+    <tr><td>Diversification Benefit</td><td>(GHS ${fmt(diversification)})</td></tr>
+    <tr style="font-weight:bold;background:#f0f7f0"><td>Subtotal (after diversification)</td><td>GHS ${fmt(g.overall_risk_charge_before_operational)}</td></tr>
+    <tr><td>Operational Risk (no diversification)</td><td>GHS ${fmt(g.operational_risk.total_operational_risk_scr)}</td></tr>
+    <tr style="font-weight:bold;background:#f0f7f0"><td>Total SCR (Overall Risk Charge)</td><td>GHS ${fmt(g.overall_risk_charge)}</td></tr>
+  `;
+
+  // Tab 3: Insurance Risk Detail
+  document.getElementById('sv-ins-detail-body').innerHTML = g.insurance_risk.class_charges.map(c => `
+    <tr><td>${c.class_name}</td><td>${c.segment}</td>
+      <td>GHS ${fmt(payload.insurance_risk.net_premium[c.class_name] || 0)}</td><td>GHS ${fmt(c.premium_charge)}</td>
+      <td>GHS ${fmt(payload.insurance_risk.net_claims_reserve[c.class_name] || 0)}</td><td>GHS ${fmt(c.reserve_charge)}</td>
+      <td>GHS ${fmt(c.combined_charge)}</td></tr>
+  `).join('') || '<tr><td colspan="7" style="text-align:center;color:#aaa">No non-zero class exposures</td></tr>';
+  document.getElementById('sv-ins-segment-body').innerHTML = g.insurance_risk.segment_charges.map(s => `
+    <tr><td>${s.segment}</td><td>${s.classes.join(', ') || '—'}</td><td>GHS ${fmt(s.charge)}</td></tr>
+  `).join('');
+  document.getElementById('sv-ins-before-cat').textContent = 'GHS ' + fmt(g.insurance_risk.insurance_risk_before_cat);
+  document.getElementById('sv-ins-cat').textContent = 'GHS ' + fmt(g.insurance_risk.catastrophe_charge);
+
+  // Tab 4: Market Risk Detail
+  const m = g.market_risk;
+  const mktNaive = m.interest_rate_charge + m.fx_charge + m.equity_charge + m.real_estate_charge + m.right_of_use_charge;
+  document.getElementById('sv-mkt-detail-body').innerHTML = `
+    <tr><td>Interest Rate (±250bps, worse of two scenarios)</td><td>GHS ${fmt(m.interest_rate_charge)}</td></tr>
+    <tr><td>FX (by currency)</td><td>GHS ${fmt(m.fx_charge)}</td></tr>
+    <tr><td>Equity (7 categories)</td><td>GHS ${fmt(m.equity_charge)}</td></tr>
+    <tr><td>Real Estate</td><td>GHS ${fmt(m.real_estate_charge)}</td></tr>
+    <tr><td>Right-of-Use Assets</td><td>GHS ${fmt(m.right_of_use_charge)}</td></tr>
+    <tr style="font-weight:bold;background:#f0f7f0"><td>Total Market Risk SCR</td><td>GHS ${fmt(m.total_market_risk_scr)}</td></tr>
+  `;
+  document.getElementById('sv-mkt-diversification').textContent = `Diversification benefit: GHS ${fmt(mktNaive - m.total_market_risk_scr)} (naive sum GHS ${fmt(mktNaive)} vs correlated total GHS ${fmt(m.total_market_risk_scr)})`;
+
+  // Tab 5: Credit Risk Detail
+  const cr = g.credit_risk;
+  document.getElementById('sv-cred-detail-counterparty-body').innerHTML = Object.entries(cr.counterparty_by_rating).map(([k, v]) => `<tr><td>${k}</td><td>GHS ${fmt(v)}</td></tr>`).join('') || '<tr><td colspan="2" style="text-align:center;color:#aaa">None</td></tr>';
+  document.getElementById('sv-cred-detail-mortgage-body').innerHTML = Object.entries(cr.mortgage_by_ltv_band).map(([k, v]) => `<tr><td>${k}</td><td>GHS ${fmt(v)}</td></tr>`).join('') || '<tr><td colspan="2" style="text-align:center;color:#aaa">None</td></tr>';
+  document.getElementById('sv-cred-detail-other-body').innerHTML = Object.entries(cr.other_by_category).map(([k, v]) => `<tr><td>${k.replace(/_/g, ' ')}</td><td>GHS ${fmt(v)}</td></tr>`).join('');
+  document.getElementById('sv-cred-total').textContent = 'GHS ' + fmt(cr.total_credit_risk_scr);
+
+  // Tab 6: Capital Composition
+  const cap = g.capital_resources;
+  document.getElementById('sv-comp-body').innerHTML = `
+    <tr><td>Tier 1 Unlimited (gross)</td><td>GHS ${fmt(cap.tier1_unlimited)}</td></tr>
+    <tr><td>Tier 1 Unlimited deductions</td><td>(GHS ${fmt(cap.tier1_unlimited_deductions)})</td></tr>
+    <tr><td>Net Tier 1 Unlimited</td><td>GHS ${fmt(cap.net_tier1_unlimited)}</td></tr>
+    <tr><td>Tier 1 Limited (eligible, after 25% cap)</td><td>GHS ${fmt(cap.eligible_tier1_limited)}</td></tr>
+    <tr><td>Tier 2 (eligible, after 25% cap)</td><td>GHS ${fmt(cap.eligible_tier2)}</td></tr>
+    <tr style="font-weight:bold;background:#f0f7f0"><td>Total Qualifying Capital Resources</td><td>GHS ${fmt(cap.total_qcr)}</td></tr>
+  `;
+  const tier1Pct = cap.total_qcr > 0 ? (cap.net_tier1_unlimited / cap.total_qcr) * 100 : 0;
+  const compOk = g.capital_composition_valid;
+  document.getElementById('sv-comp-status').innerHTML = compOk
+    ? `<span style="color:#2a7">PASS — Tier 1 Unlimited is ${tier1Pct.toFixed(1)}% of QCR (minimum 50%)</span>`
+    : `<span style="color:#c33">BREACH — Tier 1 Unlimited is only ${tier1Pct.toFixed(1)}% of QCR (minimum 50% required)</span>`;
+
+  // Tab 7: Stress Tests
+  document.getElementById('sv-stress-body').innerHTML = (data.stress_tests || []).map(s => `
+    <tr><td><strong>${s.scenario_name}</strong></td><td>${s.description}</td><td>${pct(s.new_car)}</td>
+      <td>${s.status}</td>
+      <td style="color:${s.passed ? '#2a7' : '#c33'}">${s.passed ? 'PASS' : 'FAIL'}</td>
+      <td>${(s.car_change * 100).toFixed(2)}pp</td></tr>
+  `).join('');
+}
+
+let svScrChart = null;
+function renderSvScrPieChart(g) {
+  const ctx = document.getElementById('sv-scr-pie-chart');
+  if (!ctx) return;
+  if (svScrChart) svScrChart.destroy();
+  svScrChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Insurance Risk', 'Catastrophe', 'Market Risk', 'Credit Risk', 'Operational Risk'],
+      datasets: [{
+        data: [
+          g.insurance_risk.insurance_risk_before_cat, g.insurance_risk.catastrophe_charge,
+          g.market_risk.total_market_risk_scr, g.credit_risk.total_credit_risk_scr,
+          g.operational_risk.total_operational_risk_scr,
+        ],
+        backgroundColor: ['#1F3864', '#C9A84C', '#2E5090', '#8A6D1D', '#6b7280'],
+      }],
+    },
+    options: { plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } },
+  });
+}
+
+async function downloadSolvencyCertificate() {
+  const btn = document.getElementById('btn-sv-cert-download');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Preparing...';
+  btn.disabled = true;
+  try {
+    const payload = collectSolvencyPayload();
+    payload.appointed_actuary = document.getElementById('sv-cert-actuary').value;
+    payload.qualifications = document.getElementById('sv-cert-qual').value;
+    payload.consulting_firm = document.getElementById('sv-cert-firm').value;
+    const r = await apiFetch('/export/solvency-certificate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.word_download_url.split('/').pop();
+    await downloadFile(d.data.word_download_url, filename);
+  } catch (e) {
+    alert('Download failed: ' + e.message);
   }
   btn.innerHTML = original;
   btn.disabled = false;

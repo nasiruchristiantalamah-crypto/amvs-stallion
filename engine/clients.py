@@ -118,6 +118,18 @@ class ClientConfig:
     # display alongside it.
     data_provenance_warning:   Optional[str] = None
     data_file_used:            Optional[str] = None
+    # Where this client's RBC/GIRBC solvency workbook lives — DELIBERATELY
+    # separate from data_folder above. A client's non-life reserving
+    # workbooks (IBNR triangles, OCR register, etc.) and its FCR/RBC
+    # solvency filing are typically produced by different teams, on
+    # different cycles, and live in different folders (for QIC:
+    # data_folder is ".../REPORTS/IFRS 17 Valuation Run", but the real
+    # GIRBC return lives under ".../REPORTS/FCR/2025/Worksheets/") — see
+    # engine/data_loader.py's load_rbc_solvency_data(). Same env var /
+    # client.yaml precedence pattern as data_folder (env var wins):
+    # <CLIENT_ID>_RBC_DATA_DIR, else client.yaml's rbc_data_folder.
+    rbc_data_folder:              Optional[str] = None
+    rbc_data_files:                 Dict[str, str] = field(default_factory=dict)
 
     @property
     def root(self) -> str:
@@ -197,6 +209,10 @@ def load_client(client_id: str) -> ClientConfig:
     env_data_dir = os.environ.get(f"{client_id.upper()}_DATA_DIR")
     data_folder = env_data_dir or client_raw.get("data_folder")
 
+    env_rbc_data_dir = os.environ.get(f"{client_id.upper()}_RBC_DATA_DIR")
+    rbc_data_folder = env_rbc_data_dir or client_raw.get("rbc_data_folder")
+    rbc_data_files = dict(raw.get("rbc_data_files") or {})
+
     # Normalise to lowercase keys so _bucket_granular()'s case-insensitive
     # lookup doesn't depend on how the label happened to be cased in YAML.
     ocr_class_mapping = {
@@ -220,6 +236,8 @@ def load_client(client_id: str) -> ClientConfig:
         class_warnings                      = class_warnings,
         data_provenance_warning              = raw.get("data_provenance_warning"),
         data_file_used                        = raw.get("data_file_used"),
+        rbc_data_folder                          = rbc_data_folder,
+        rbc_data_files                              = rbc_data_files,
     )
 
 

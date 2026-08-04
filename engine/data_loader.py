@@ -761,6 +761,399 @@ def load_paid_claims_granular(client_id: str = "pic", data_folder_override: Opti
     return totals
 
 
+# ── 6. RBC / GIRBC solvency data (engine/rbc/) ──────────────────────────────
+#
+# Reads a client's real GIRBC official return workbook (see
+# ClientConfig.rbc_data_folder / rbc_data_files — a SEPARATE folder/file
+# from the reserving data above, see that field's docstring for why) and
+# returns the five engine.rbc.data_model dataclasses the RBC risk modules
+# need. Built and verified directly against QIC's real 2025 filing
+# (QIC_GIRBC_Official_Return_2025.xlsx) — every label string below is a
+# real header/row label read from that workbook's GIRBC2/3/4/5/6 sheets,
+# not guessed.
+#
+# Known approximations — read before trusting this against a different
+# client's workbook, or before treating a client's Market/Credit figures as
+# fully reconciled:
+#   - InsuranceRiskExposures: the real GIRBC3 sheet groups classes into 9
+#     named "Segments" which roll up into 5 "Categories" (Liability-like,
+#     Motor-like, Property-like, Other, Credit). This loader reads the
+#     Category-level Summary totals (reliable, clean labels) and assigns
+#     each Category's total premium/reserve to ONE representative class in
+#     engine.rbc.insurance_risk's 11-class taxonomy (Liability-like->
+#     "Liability", Motor-like->"Motor", Property-like->"Fire", Other->
+#     "Accident", Credit->"Miscellaneous") rather than splitting further —
+#     mathematically this gives the SAME total_insurance_risk_scr as a true
+#     split would (a segment with only one non-zero class just returns that
+#     class's own charge unchanged), it just doesn't produce a genuinely
+#     per-class breakdown in the UI.
+#   - MarketRiskExposures' Equity section: the real template has 7 equity
+#     categories with 7 different factors; this data model only has 4
+#     ("domestic"/"foreign_developed"/"foreign_emerging"/"unlisted"). This
+#     loader maps the 3 categories with a clean 1:1 conceptual match
+#     (GSE-listed/developed/emerging) directly, and sums the remaining 4
+#     real categories (hybrid debt, two related-party buckets, other
+#     equity — which carry DIFFERENT real factors: 20%/40%/50%/50%) into
+#     "unlisted". This will NOT exactly reproduce a real Equity charge
+#     whenever those 4 categories are non-zero (as they are for QIC) — see
+#     engine/rbc/market_risk.py's own module docstring, which already flags
+#     this factor-table mismatch as needing correction; this loader
+#     approximation is a direct consequence of that, not a separate issue.
+#   - CreditRiskExposures "Other" bucket: the real GIRBC5 sheet has more
+#     distinct line items (e.g. current tax assets at 0%, mandatory pool
+#     receivables at 0.7%) than this data model's 6 fields. Receivables
+#     aged 60+ days and salvage/subrogation recoverables are both folded
+#     into other_receivables here (both carry the real 20% factor, so this
+#     specific collapse doesn't lose accuracy) — but mandatory pool
+#     receivables and current tax assets have no field to go into and are
+#     NOT currently read by this loader (a real, disclosed gap — flagged
+#     for Phase 4 rather than silently dropped).
+#   - Counterparty/mortgage exposures (RC-rated and LTV-banded) are parsed
+#     best-effort but UNTESTED against real non-zero data — QIC's own 2025
+#     filing left both sections entirely blank.
+
+from engine.rbc.data_model import (
+    CreditRiskExposures, InsuranceRiskExposures, MarketRiskExposures,
+    OperationalRiskExposures, QualifyingCapitalResources,
+)
+
+# GIRBC3 Category -> this module's representative class (see docstring above).
+_GIRBC3_CATEGORY_TO_CLASS = {
+    "Liability-like": "Liability", "Motor-like": "Motor", "Property-like": "Fire",
+    "Other": "Accident", "Credit": "Miscellaneous",
+}
+
+_MORTGAGE_LTV_LABELS = {
+    "LTV ≤ 40%": "<50%", "LTV ≤ 50%": "<50%", "40% < LTV ≤ 60%": "50-60%",
+    "50% < LTV ≤ 60%": "50-60%", "60% < LTV ≤ 80%": "60-70%", "80% < LTV ≤ 90%": "80-90%",
+    "90% < LTV ≤ 100%": ">90%", "LTV > 100%": ">90%",
+}
+
+
+def _value_right_of_label(rows: List[tuple], label: str, mode: str = "contains", occurrence: int = 0) -> Optional[float]:
+    """
+    Find the `occurrence`-th row containing a cell matching `label`, and
+    return the first numeric value in that row AFTER the label's column.
+    Returns None if not found or the value isn't numeric.
+    """
+    seen = 0
+    for row in rows:
+        col = _find_col(row, label, mode)
+        if col is None:
+            continue
+        if seen < occurrence:
+            seen += 1
+            continue
+        for v in row[col + 1:]:
+            if isinstance(v, (int, float)):
+                return float(v)
+        return None
+    return None
+
+
+def _rbc_workbook_rows(client: ClientConfig, sheet_name: str, workbook_key: str = "girbc_workbook") -> List[tuple]:
+    if not client.rbc_data_folder:
+        raise ValueError(
+            f"Client '{client.client_id}' has no rbc_data_folder configured — set the "
+            f"{client.client_id.upper()}_RBC_DATA_DIR environment variable, or rbc_data_folder "
+            f"in clients/{client.client_id}/client.yaml for local development."
+        )
+    if workbook_key not in client.rbc_data_files:
+        raise ValueError(f"Client '{client.client_id}' has no '{workbook_key}' configured in rbc_data_files")
+    path = os.path.join(client.rbc_data_folder, client.rbc_data_files[workbook_key])
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        if sheet_name not in wb.sheetnames:
+            raise ValueError(f"Sheet '{sheet_name}' not found in {path} — available: {wb.sheetnames}")
+        return list(wb[sheet_name].iter_rows(values_only=True))
+    finally:
+        wb.close()
+
+
+def _parse_girbc2_capital_resources(rows: List[tuple]) -> QualifyingCapitalResources:
+    a = _value_right_of_label(rows, "Tier 1 unlimited financial instruments [A]") or 0.0
+    b = _value_right_of_label(rows, "Tier 1 capital components other than financial instruments [B]") or 0.0
+    c = _value_right_of_label(rows, "Deductions from Tier 1 capital resources [C]") or 0.0
+    e = _value_right_of_label(rows, "Tier 1 limited financial instruments [E]") or 0.0
+    i = _value_right_of_label(rows, "Tier 2 financial instruments [I]") or 0.0
+    j = _value_right_of_label(rows, "Tier 2 capital components other than financial instruments [J]") or 0.0
+    k = _value_right_of_label(rows, "Deductions from Tier 2 capital resources [K]") or 0.0
+    amortisation = _value_right_of_label(rows, "less: accumulated amortisation") or 0.0
+
+    return QualifyingCapitalResources(
+        tier1_unlimited=a + b, tier1_unlimited_deductions=c,
+        tier1_limited=e, tier2=i + j - k, tier2_amortisation=amortisation,
+    )
+
+
+def _parse_girbc3_insurance_exposures(rows: List[tuple]) -> Tuple[InsuranceRiskExposures, float]:
+    # Category names ("Liability-like" etc.) appear in THREE places in this
+    # sheet: once per individual product row's Category column, once as the
+    # Summary block's own row labels (what we want), and AGAIN as a
+    # correlation-matrix header on the Summary block's OWN header row
+    # (e.g. row 0 of the summary block has 'Liability-like' at column 16 as
+    # a matrix column header, not an exposure value). A generic "find this
+    # label anywhere in the row" search matches that header row first
+    # (since it's scanned before the real data row) and reads a matrix
+    # value instead of an exposure — anchor on the exact COLUMN "Summary"
+    # itself was found in, not just any column, to avoid it.
+    summary_idx, summary_col = _find_row_with_col(rows, "Summary", mode="exact")
+    summary_rows = rows[summary_idx:] if summary_idx is not None else rows
+
+    net_premium: Dict[str, float] = {}
+    net_claims_reserve: Dict[str, float] = {}
+    if summary_col is not None:
+        for row in summary_rows:
+            label = _cell(row, summary_col)
+            cls = _GIRBC3_CATEGORY_TO_CLASS.get(label)
+            if cls is None:
+                continue
+            exposure = _cell(row, summary_col + 1)
+            reserve = _cell(row, summary_col + 2)
+            if isinstance(exposure, (int, float)):
+                net_premium[cls] = net_premium.get(cls, 0.0) + float(exposure)
+            if isinstance(reserve, (int, float)):
+                net_claims_reserve[cls] = net_claims_reserve.get(cls, 0.0) + float(reserve)
+
+    revenue = _value_right_of_label(
+        rows, "Total insurance revenue less the reinsurance premiums paid for the 12 months preceding the reporting date"
+    ) or sum(net_premium.values())
+
+    return InsuranceRiskExposures(net_premium=net_premium, net_claims_reserve=net_claims_reserve), revenue
+
+
+def _parse_girbc4_market_exposures(rows: List[tuple]) -> MarketRiskExposures:
+    ir_assets = _value_right_of_label(rows, "Present value of interest sensitive assets", occurrence=0) or 0.0
+    ir_liabilities = _value_right_of_label(rows, "Present value of interest sensitive liabilities", occurrence=0) or 0.0
+
+    fx: Dict[str, float] = {}
+    for ccy in ("EURO", "GBP", "USD", "Other"):
+        row_idx, col = _find_row_with_col(rows, ccy, mode="exact")
+        if row_idx is None:
+            continue
+        row = rows[row_idx]
+        long_pos = _cell(row, col + 3)
+        short_pos = _cell(row, col + 4)
+        net = (long_pos or 0.0) - (short_pos or 0.0)
+        if net:
+            fx[ccy] = float(net)
+
+    # 7 real categories mapped 1:1 to engine.rbc.market_risk.EQUITY_FACTORS'
+    # 7 keys (corrected 2026-08-03 — previously 4 of these were collapsed
+    # into "unlisted", which lost the distinct hybrid_debt/related_party
+    # factors; see that module's docstring).
+    equity_label_map = {
+        "Equity listed on the Ghana Stock Exchange": "domestic",
+        "Listed equity in developed markets": "foreign_developed",
+        "Listed equity in emerging markets": "foreign_emerging",
+        "Hybrid debt and preference shares": "hybrid_debt",
+        "Equity investments in related parties that are prudentially regulated financial institutions": "related_party_regulated",
+        "Equity investments in related parties that are not prudentially regulated financial institutions": "related_party_unregulated",
+        "Other equity investments": "unlisted",
+    }
+    listed_equities: Dict[str, float] = {}
+    for label, cat in equity_label_map.items():
+        v = _value_right_of_label(rows, label, mode="startswith")
+        if v:
+            listed_equities[cat] = listed_equities.get(cat, 0.0) + v
+
+    real_estate_label_map = {
+        "Real estate for own use": "domestic",
+        "Real estate investments in related parties that are not prudentially regulated financial institutions": "foreign",
+        "Other real estate investments that generate material predictable revenues": "foreign",
+        "Other real estate investments": "foreign",
+    }
+    real_estate: Dict[str, float] = {}
+    for label, cat in real_estate_label_map.items():
+        v = _value_right_of_label(rows, label, mode="startswith")
+        if v:
+            real_estate[cat] = real_estate.get(cat, 0.0) + v
+
+    rou_label_map = {
+        "Right-of-use assets associated with leased owner-occupied properties": "owner_occupied",
+        'Right-of-use assets associated with leased "other assets"': "other_assets",
+        "Right-of-use assets associated with leased investment properties": "investment_property",
+    }
+    right_of_use: Dict[str, float] = {}
+    for label, cat in rou_label_map.items():
+        v = _value_right_of_label(rows, label, mode="startswith")
+        if v:
+            right_of_use[cat] = right_of_use.get(cat, 0.0) + v
+
+    return MarketRiskExposures(
+        listed_equities=listed_equities, real_estate=real_estate, right_of_use_assets=right_of_use,
+        fx_net_open_position=fx,
+        interest_rate_sensitive_assets=ir_assets, interest_rate_sensitive_liabilities=ir_liabilities,
+    )
+
+
+def _parse_girbc5_credit_exposures(rows: List[tuple]) -> CreditRiskExposures:
+    other_map = {
+        "Cash held on the insurer": "cash_and_deposits",
+        "Receivables, outstanding less than 60 days": "premium_receivables",
+        "Receivables, outstanding 60 days or more": "other_receivables",
+        "Other recoverables (mainly salvage and subrogation)": "other_receivables",
+        "Deferred tax assets arising from temporary differences": "deferred_tax_assets",
+        "Loans or other forms of lending": "related_party_loans",
+        "Insurance receivables from reinsurers": "reinsurance_recoverables",
+        "Receivables from mandatory insurance pools": "mandatory_pool_recoverables",
+    }
+    totals: Dict[str, float] = {}
+    for label, field_name in other_map.items():
+        v = _value_right_of_label(rows, label, mode="startswith")
+        if v:
+            totals[field_name] = totals.get(field_name, 0.0) + v
+
+    counterparty_exposures: List[Tuple[float, str]] = []
+    for rating in ("RC1", "RC2", "RC3", "RC4", "RC5", "RC6", "RC7", "Unrated", "Default"):
+        row_idx, col = _find_row_with_col(rows, rating, mode="exact")
+        if row_idx is None:
+            continue
+        v = _cell(rows[row_idx], col + 1)
+        if isinstance(v, (int, float)) and v:
+            counterparty_exposures.append((float(v), rating))
+
+    mortgage_exposures: List[Tuple[float, str]] = []
+    for real_label, ltv_band in _MORTGAGE_LTV_LABELS.items():
+        row_idx, col = _find_row_with_col(rows, real_label, mode="exact")
+        if row_idx is None:
+            continue
+        v = _cell(rows[row_idx], col + 1)
+        if isinstance(v, (int, float)) and v:
+            mortgage_exposures.append((float(v), ltv_band))
+
+    return CreditRiskExposures(
+        counterparty_exposures=counterparty_exposures, mortgage_exposures=mortgage_exposures,
+        cash_and_deposits=totals.get("cash_and_deposits", 0.0),
+        premium_receivables=totals.get("premium_receivables", 0.0),
+        reinsurance_recoverables=totals.get("reinsurance_recoverables", 0.0),
+        mandatory_pool_recoverables=totals.get("mandatory_pool_recoverables", 0.0),
+        deferred_tax_assets=totals.get("deferred_tax_assets", 0.0),
+        related_party_loans=totals.get("related_party_loans", 0.0),
+        other_receivables=totals.get("other_receivables", 0.0),
+    )
+
+
+def _parse_girbc6_operational_exposures(rows: List[tuple]) -> OperationalRiskExposures:
+    current_premium = _value_right_of_label(rows, "Total insurance revenue in the most recent financial year", occurrence=0) or 0.0
+    prior_premium = _value_right_of_label(rows, "Total insurance revenue in the year previous to the most recent financial year") or 0.0
+    current_liabilities = _value_right_of_label(rows, "Gross current estimate at the reporting date") or 0.0
+
+    return OperationalRiskExposures(
+        current_year_net_premium=current_premium, prior_year_net_premium=prior_premium,
+        current_year_net_liabilities=current_liabilities, prior_year_net_liabilities=0.0,
+    )
+
+
+# ── 6b. Legacy solvency margin data (engine/rbc/legacy_solvency.py) ────────
+#
+# Reads a client's real "FCR ... Actual" workbook (MCR-SCR + Calculation
+# sheets) — a DIFFERENT workbook from the GIRBC official return above, but
+# the SAME rbc_data_folder (both live under a client's FCR/<year>/ tree).
+# Built and verified directly against QIC's real 2025 legacy solvency
+# filing — every label below is real, and the resulting Legacy CAR
+# reproduces the real 117.37% ("117%") to 5 decimal places.
+
+_ASSET_DISCOUNT_LABEL_MAP = {
+    "GOG Securities": "gog_securities",
+    "Bank of Ghana Securities": "bog_securities",
+    "Statutory Deposit": "statutory_deposit",
+    "Cash and Term Deposits with a licensed bank": "cash_and_term_deposits",
+    "Corporate Debt": "corporate_debt",
+    "Quoted Equity Securities (GSE)": "listed_equities_gse",
+    "Other Securities": "other_securities",
+    "Equity Backed Mutual Funds": "equity_backed_mutual_funds",
+    "Money Market Mutual Funds": "money_market_mutual_funds",
+    "Land and Building - Investments": "property_investment",
+    "Land and Building - Own use": "property_own_use",
+    "Plant, Equipment & Furniture": "plant_equipment_furniture",
+    "Motor Vehicles": "motor_vehicles",
+    "ICT (Hardware + Software)": "ict",
+    "Amount due reinsurers < 6 months": "reinsurance_recoverables_under_6mo",
+    "Any other Asset except intangible and inadmissible assets": "other_assets",
+}
+
+
+def _parse_legacy_solvency_inputs(mcr_scr_rows: List[tuple], calculation_rows: List[tuple]):
+    from engine.rbc.data_model import LegacySolvencyInputs
+
+    core_gross = _value_right_of_label(mcr_scr_rows, "Total Core Capital", mode="exact") or 0.0
+    noncore_gross = _value_right_of_label(mcr_scr_rows, "Total Non-Core Capital", mode="exact") or 0.0
+    total_capital_base = core_gross + noncore_gross
+
+    core_row_idx, core_col = _find_row_with_col(mcr_scr_rows, "Total Core Capital", mode="exact")
+    core_admissible = _cell(mcr_scr_rows[core_row_idx], core_col + 3) if core_row_idx is not None else 0.0
+    noncore_row_idx, noncore_col = _find_row_with_col(mcr_scr_rows, "Total Non-Core Capital", mode="exact")
+    noncore_admissible = _cell(mcr_scr_rows[noncore_row_idx], noncore_col + 3) if noncore_row_idx is not None else 0.0
+    capital_deductions = (core_gross - (core_admissible or 0.0)) + (noncore_gross - (noncore_admissible or 0.0))
+
+    asset_balances: Dict[str, float] = {}
+    for real_label, key in _ASSET_DISCOUNT_LABEL_MAP.items():
+        row_idx, col = _find_row_with_col(calculation_rows, real_label, mode="exact")
+        if row_idx is None:
+            continue
+        v = _cell(calculation_rows[row_idx], col + 2)
+        asset_balances[key] = float(v) if isinstance(v, (int, float)) else 0.0
+
+    net_written_premium = _value_right_of_label(calculation_rows, "Net Written Premium (current year)", mode="exact") or 0.0
+    management_expenses = _value_right_of_label(
+        calculation_rows, "Non-attributable Expenses + Acquisition Cashflows", mode="exact"
+    ) or 0.0
+
+    return LegacySolvencyInputs(
+        total_capital_base=total_capital_base, capital_deductions=capital_deductions,
+        asset_balances=asset_balances, net_written_premium=net_written_premium,
+        management_expenses=management_expenses,
+    )
+
+
+def load_rbc_solvency_data(client_id: str = "pic") -> dict:
+    """
+    Parse a client's real GIRBC official return workbook into the five
+    engine.rbc.data_model inputs, PLUS (if the client has a legacy_workbook
+    configured in rbc_data_files) the legacy solvency-margin inputs from a
+    separate "FCR ... Actual" workbook. See this section's module-level
+    comment (above) for known approximations vs a fully granular
+    reconstruction.
+
+    Returns:
+        {
+            "capital_resources":    QualifyingCapitalResources,
+            "insurance_risk":       InsuranceRiskExposures,
+            "net_non_life_insurance_revenue": float,
+            "market_risk":            MarketRiskExposures,
+            "credit_risk":               CreditRiskExposures,
+            "operational_risk":             OperationalRiskExposures,
+            "legacy_inputs":                   LegacySolvencyInputs | None,  # None if legacy_workbook isn't configured for this client
+        }
+    """
+    client = load_client(client_id)
+
+    girbc2 = _rbc_workbook_rows(client, "GIRBC2-Qual. Capital Resources")
+    girbc3 = _rbc_workbook_rows(client, "GIRBC3-Insurance Risks")
+    girbc4 = _rbc_workbook_rows(client, "GIRBC4-Market Risks")
+    girbc5 = _rbc_workbook_rows(client, "GIRBC5-Credit Risks")
+    girbc6 = _rbc_workbook_rows(client, "GIRBC6-Operational Risk")
+
+    insurance_risk, revenue = _parse_girbc3_insurance_exposures(girbc3)
+
+    legacy_inputs = None
+    if "legacy_workbook" in client.rbc_data_files:
+        mcr_scr_rows = _rbc_workbook_rows(client, "MCR-SCR", workbook_key="legacy_workbook")
+        calculation_rows = _rbc_workbook_rows(client, "Calculation", workbook_key="legacy_workbook")
+        legacy_inputs = _parse_legacy_solvency_inputs(mcr_scr_rows, calculation_rows)
+
+    return {
+        "capital_resources":               _parse_girbc2_capital_resources(girbc2),
+        "insurance_risk":                     insurance_risk,
+        "net_non_life_insurance_revenue":        revenue,
+        "market_risk":                              _parse_girbc4_market_exposures(girbc4),
+        "credit_risk":                                  _parse_girbc5_credit_exposures(girbc5),
+        "operational_risk":                                _parse_girbc6_operational_exposures(girbc6),
+        "legacy_inputs":                                      legacy_inputs,
+    }
+
+
 # ── Quick test ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     """

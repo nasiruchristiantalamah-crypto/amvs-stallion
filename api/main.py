@@ -6,9 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()   # loads .env for local dev — no-op if it doesn't exist (Railway injects env vars directly)
 
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from datetime import datetime
 from urllib.parse import urlsplit, urlunsplit
 
+import json
 import shutil
 import tempfile
 
@@ -16,13 +18,27 @@ from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Requ
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from engine.runner import run_pricing, run_ifrs17, run_rate_table, run_reserving, run_nic_summary
 from engine.ifrs17_nonlife import generate_nonlife_paa_statements
-from engine.data_loader import load_paid_claims
+from engine.data_loader import load_paid_claims, load_rbc_solvency_data
+from engine.rbc.data_model import (
+    CreditRiskExposures, InsuranceRiskExposures, LegacySolvencyInputs, MarketRiskExposures,
+    OperationalRiskExposures, QualifyingCapitalResources,
+)
+from engine.rbc.insurance_risk import calculate_insurance_risk
+from engine.rbc.market_risk import calculate_market_risk
+from engine.rbc.credit_risk import calculate_credit_risk
+from engine.rbc.operational_risk import calculate_operational_risk
+from engine.rbc.aggregation import calculate_solvency, SolvencyResult
+from engine.rbc.legacy_solvency import calculate_legacy_solvency
+from engine.rbc.stress_tests import run_stress_tests
+from outputs.solvency_word_exporter import (
+    generate_girbc_certificate_from_results, GENERATED_DIR as SOLVENCY_WORD_GENERATED_DIR,
+)
 from engine.journals import generate_nonlife_journal
 from engine.clients import list_clients, load_client
 from engine.assumptions_manager import AssumptionSet
@@ -35,7 +51,7 @@ from outputs.custom_pricing_word_exporter import generate_custom_pricing_avr_not
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
 from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
-from db.models import User, ValuationRun, UserRole, AssumptionSet as AssumptionSetModel, ReservingNote
+from db.models import User, ValuationRun, UserRole, AssumptionSet as AssumptionSetModel, ReservingNote, SolvencyRun
 from auth.dependencies import get_current_user, get_current_admin
 from auth.router import router as auth_router
 
@@ -1353,6 +1369,385 @@ async def upload_export_word(
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SOLVENCY — GIRBC risk-based capital + legacy solvency margin (engine/rbc/)
+# ══════════════════════════════════════════════════════════════════════════════
+# Every request accepts EITHER client_id alone (auto-loads that client's real
+# GIRBC/legacy workbooks via engine.data_loader.load_rbc_solvency_data — see
+# that function's docstring) OR fully manual exposure inputs (what the
+# dashboard's editable input panels send once a user has tweaked
+# auto-loaded values, or for a client with no real workbook configured yet).
+# Manual inputs win whenever ANY of them are provided — client_id alone
+# only triggers auto-load when every input section is omitted.
+
+class QualifyingCapitalResourcesRequest(BaseModel):
+    tier1_unlimited:              float = 0.0
+    tier1_unlimited_deductions:      float = 0.0
+    tier1_limited:                      float = 0.0
+    tier2:                                  float = 0.0
+    tier2_amortisation:                        float = 0.0
+
+class InsuranceRiskExposuresRequest(BaseModel):
+    net_premium:           Dict[str, float] = Field(default_factory=dict)
+    net_claims_reserve:       Dict[str, float] = Field(default_factory=dict)
+
+class MarketRiskExposuresRequest(BaseModel):
+    bonds_and_fixed_income:               Dict[str, float] = Field(default_factory=dict)
+    listed_equities:                          Dict[str, float] = Field(default_factory=dict)
+    real_estate:                                  Dict[str, float] = Field(default_factory=dict)
+    right_of_use_assets:                              Dict[str, float] = Field(default_factory=dict)
+    fx_net_open_position:                                 Dict[str, float] = Field(default_factory=dict)
+    interest_rate_sensitive_assets:                            float = 0.0
+    interest_rate_sensitive_liabilities:                           float = 0.0
+
+class RatedExposureItem(BaseModel):
+    amount:      float
+    category:      str   # rating class (RC1-RC7/Unrated/Default) for counterparty_exposures, or LTV band for mortgage_exposures
+
+class CreditRiskExposuresRequest(BaseModel):
+    counterparty_exposures:      List[RatedExposureItem] = Field(default_factory=list)
+    mortgage_exposures:              List[RatedExposureItem] = Field(default_factory=list)
+    cash_and_deposits:                    float = 0.0
+    premium_receivables:                     float = 0.0
+    reinsurance_recoverables:                    float = 0.0
+    mandatory_pool_recoverables:                     float = 0.0
+    deferred_tax_assets:                                 float = 0.0
+    related_party_loans:                                     float = 0.0
+    other_receivables:                                           float = 0.0
+
+class OperationalRiskExposuresRequest(BaseModel):
+    current_year_net_premium:          float = 0.0
+    prior_year_net_premium:                float = 0.0
+    current_year_net_liabilities:              float = 0.0
+    prior_year_net_liabilities:                    float = 0.0
+
+class LegacySolvencyInputsRequest(BaseModel):
+    total_capital_base:          float = 0.0
+    capital_deductions:              float = 0.0
+    asset_balances:                      Dict[str, float] = Field(default_factory=dict)
+    net_written_premium:                    float = 0.0
+    management_expenses:                        float = 0.0
+
+
+def _rbc_inputs_provided(req) -> bool:
+    return any([req.capital_resources, req.insurance_risk, req.market_risk, req.credit_risk, req.operational_risk])
+
+
+def _to_capital_resources(req: Optional[QualifyingCapitalResourcesRequest]) -> QualifyingCapitalResources:
+    return QualifyingCapitalResources(**req.model_dump()) if req else QualifyingCapitalResources()
+
+def _to_insurance_exposures(req: Optional[InsuranceRiskExposuresRequest]) -> InsuranceRiskExposures:
+    return InsuranceRiskExposures(**req.model_dump()) if req else InsuranceRiskExposures()
+
+def _to_market_exposures(req: Optional[MarketRiskExposuresRequest]) -> MarketRiskExposures:
+    return MarketRiskExposures(**req.model_dump()) if req else MarketRiskExposures()
+
+def _to_credit_exposures(req: Optional[CreditRiskExposuresRequest]) -> CreditRiskExposures:
+    if req is None:
+        return CreditRiskExposures()
+    d = req.model_dump()
+    counterparty = [(item["amount"], item["category"]) for item in d.pop("counterparty_exposures")]
+    mortgage = [(item["amount"], item["category"]) for item in d.pop("mortgage_exposures")]
+    return CreditRiskExposures(counterparty_exposures=counterparty, mortgage_exposures=mortgage, **d)
+
+def _to_operational_exposures(req: Optional[OperationalRiskExposuresRequest]) -> OperationalRiskExposures:
+    return OperationalRiskExposures(**req.model_dump()) if req else OperationalRiskExposures()
+
+def _to_legacy_inputs(req: Optional[LegacySolvencyInputsRequest]) -> LegacySolvencyInputs:
+    return LegacySolvencyInputs(**req.model_dump()) if req else LegacySolvencyInputs()
+
+
+def _resolve_rbc_exposures(req):
+    """
+    req must have: client_id, capital_resources, insurance_risk,
+    net_non_life_insurance_revenue, market_risk, credit_risk,
+    operational_risk (RbcSolvencyRequest and FullSolvencyRequest both do).
+
+    Returns (capital_resources, insurance_exposures, net_non_life_insurance_revenue, market_exposures, credit_exposures, operational_exposures).
+    """
+    if req.client_id and not _rbc_inputs_provided(req):
+        loaded = load_rbc_solvency_data(req.client_id)
+        return (
+            loaded["capital_resources"], loaded["insurance_risk"], loaded["net_non_life_insurance_revenue"],
+            loaded["market_risk"], loaded["credit_risk"], loaded["operational_risk"],
+        )
+    return (
+        _to_capital_resources(req.capital_resources), _to_insurance_exposures(req.insurance_risk),
+        req.net_non_life_insurance_revenue, _to_market_exposures(req.market_risk),
+        _to_credit_exposures(req.credit_risk), _to_operational_exposures(req.operational_risk),
+    )
+
+
+def _run_rbc_calculation(req):
+    cap, ins_exp, revenue, mkt_exp, cred_exp, op_exp = _resolve_rbc_exposures(req)
+    ins = calculate_insurance_risk(ins_exp, revenue)
+    mkt = calculate_market_risk(mkt_exp)
+    cred = calculate_credit_risk(cred_exp)
+    op = calculate_operational_risk(op_exp)
+    return calculate_solvency(ins, mkt, cred, op, cap)
+
+
+def _capital_resources_dict(cap: QualifyingCapitalResources) -> dict:
+    """
+    dataclasses.asdict() only serialises DECLARED FIELDS — it silently
+    drops @property values (net_tier1_unlimited, eligible_tier1_limited,
+    eligible_tier2, total_qcr, composition_valid all live as properties on
+    QualifyingCapitalResources, not fields — see data_model.py). Found via
+    live browser testing: the dashboard's Capital Composition tab showed
+    "0.0% of QCR" instead of the real percentage because of exactly this —
+    asdict(sol)'s nested capital_resources dict was missing every computed
+    value. This patches them back in wherever a SolvencyResult crosses the
+    JSON boundary.
+    """
+    d = asdict(cap)
+    d.update({
+        "net_tier1_unlimited":      round(cap.net_tier1_unlimited, 2),
+        "eligible_tier1_limited":      round(cap.eligible_tier1_limited, 2),
+        "eligible_tier2":                 round(cap.eligible_tier2, 2),
+        "total_qcr":                         round(cap.total_qcr, 2),
+        "composition_valid":                    cap.composition_valid,
+    })
+    return d
+
+
+def _solvency_result_dict(sol: SolvencyResult) -> dict:
+    d = asdict(sol)
+    d["capital_resources"] = _capital_resources_dict(sol.capital_resources)
+    return d
+
+
+def _resolve_legacy_inputs(client_id: Optional[str], req_inputs: Optional[LegacySolvencyInputsRequest]) -> Optional[LegacySolvencyInputs]:
+    if client_id and req_inputs is None:
+        loaded = load_rbc_solvency_data(client_id)
+        return loaded["legacy_inputs"]
+    return _to_legacy_inputs(req_inputs)
+
+
+class RbcSolvencyRequest(BaseModel):
+    client_id:                            Optional[str] = Field(None, description="Auto-loads this client's real GIRBC workbook if no manual inputs are given — see GET /clients")
+    capital_resources:                        Optional[QualifyingCapitalResourcesRequest] = None
+    insurance_risk:                               Optional[InsuranceRiskExposuresRequest] = None
+    net_non_life_insurance_revenue:                   float = 0.0
+    market_risk:                                          Optional[MarketRiskExposuresRequest] = None
+    credit_risk:                                              Optional[CreditRiskExposuresRequest] = None
+    operational_risk:                                             Optional[OperationalRiskExposuresRequest] = None
+
+class LegacySolvencyRequest(BaseModel):
+    client_id:          Optional[str] = None
+    legacy_inputs:          Optional[LegacySolvencyInputsRequest] = None
+
+class FullSolvencyRequest(BaseModel):
+    client_id:                            Optional[str] = None
+    valuation_date:                           str = "FY2025"
+    capital_resources:                            Optional[QualifyingCapitalResourcesRequest] = None
+    insurance_risk:                                   Optional[InsuranceRiskExposuresRequest] = None
+    net_non_life_insurance_revenue:                       float = 0.0
+    market_risk:                                              Optional[MarketRiskExposuresRequest] = None
+    credit_risk:                                                  Optional[CreditRiskExposuresRequest] = None
+    operational_risk:                                                 Optional[OperationalRiskExposuresRequest] = None
+    legacy_inputs:                                                        Optional[LegacySolvencyInputsRequest] = None
+
+class SaveSolvencyRequest(BaseModel):
+    client_id:          str
+    valuation_date:         str = "FY2025"
+    inputs:                     dict
+    results:                       dict
+    girbc_car:                         Optional[float] = None
+    legacy_car:                            Optional[float] = None
+
+
+def _solvency_run_to_dict(run: SolvencyRun, db: Session) -> dict:
+    author = db.query(User).filter(User.id == run.user_id).first()
+    return {
+        "id": run.id, "client_id": run.client_id, "valuation_date": run.valuation_date,
+        "girbc_car": run.girbc_car, "legacy_car": run.legacy_car,
+        "created_by": author.email if author else None,
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+        "inputs": json.loads(run.inputs_json), "results": json.loads(run.results_json),
+    }
+
+
+@protected.post("/solvency/rbc")
+def solvency_rbc_endpoint(request: RbcSolvencyRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        sol = _run_rbc_calculation(request)
+        result = _solvency_result_dict(sol)
+        _log_valuation_run(db, current_user, "solvency_rbc", request.model_dump(), result, client_id=request.client_id)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.post("/solvency/legacy")
+def solvency_legacy_endpoint(request: LegacySolvencyRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        inputs = _resolve_legacy_inputs(request.client_id, request.legacy_inputs)
+        if inputs is None:
+            raise HTTPException(status_code=400, detail=f"Client '{request.client_id}' has no legacy_workbook configured in rbc_data_files")
+        result = asdict(calculate_legacy_solvency(inputs))
+        _log_valuation_run(db, current_user, "solvency_legacy", request.model_dump(), result, client_id=request.client_id)
+        return {"success": True, "data": result}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.post("/solvency/full")
+def solvency_full_endpoint(request: FullSolvencyRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        cap, ins_exp, revenue, mkt_exp, cred_exp, op_exp = _resolve_rbc_exposures(request)
+        ins = calculate_insurance_risk(ins_exp, revenue)
+        mkt = calculate_market_risk(mkt_exp)
+        cred = calculate_credit_risk(cred_exp)
+        op = calculate_operational_risk(op_exp)
+        sol = calculate_solvency(ins, mkt, cred, op, cap)
+        girbc_result = _solvency_result_dict(sol)
+
+        stress_results = [asdict(r) for r in run_stress_tests(ins_exp, revenue, mkt_exp, cred_exp, op_exp, cap)]
+
+        legacy_inputs = _resolve_legacy_inputs(request.client_id, request.legacy_inputs)
+        legacy_result = asdict(calculate_legacy_solvency(legacy_inputs)) if legacy_inputs is not None else None
+
+        result = {
+            "valuation_date": request.valuation_date, "girbc": girbc_result, "legacy": legacy_result,
+            "stress_tests": stress_results,
+        }
+        _log_valuation_run(db, current_user, "solvency_full", request.model_dump(), result, client_id=request.client_id)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/solvency/raw-inputs/{client_id}")
+def solvency_raw_inputs_endpoint(client_id: str, current_user: User = Depends(get_current_user)):
+    """
+    The RAW exposure inputs parsed from a client's real GIRBC/legacy
+    workbooks (not the computed risk charges — see POST /solvency/rbc for
+    that) — lets the dashboard's "Load from client data" button populate
+    its editable input panels with real starting values a user can then
+    review/adjust before running the actual calculation.
+    """
+    try:
+        data = load_rbc_solvency_data(client_id)
+        return {
+            "success": True,
+            "data": {
+                "capital_resources": asdict(data["capital_resources"]),
+                "insurance_risk": asdict(data["insurance_risk"]),
+                "net_non_life_insurance_revenue": data["net_non_life_insurance_revenue"],
+                "market_risk": asdict(data["market_risk"]),
+                "credit_risk": {
+                    **asdict(data["credit_risk"]),
+                    "counterparty_exposures": [{"amount": a, "category": c} for a, c in data["credit_risk"].counterparty_exposures],
+                    "mortgage_exposures": [{"amount": a, "category": c} for a, c in data["credit_risk"].mortgage_exposures],
+                },
+                "operational_risk": asdict(data["operational_risk"]),
+                "legacy_inputs": asdict(data["legacy_inputs"]) if data["legacy_inputs"] is not None else None,
+            },
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/solvency/history/{client_id}")
+def solvency_history_endpoint(client_id: str, limit: int = 50, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    runs = (
+        db.query(SolvencyRun).filter(SolvencyRun.client_id == client_id)
+        .order_by(SolvencyRun.created_at.desc()).limit(min(limit, 200)).all()
+    )
+    return {"success": True, "data": [_solvency_run_to_dict(r, db) for r in runs]}
+
+
+@protected.post("/solvency/save")
+def solvency_save_endpoint(request: SaveSolvencyRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        run = SolvencyRun(
+            client_id=request.client_id, user_id=current_user.id, valuation_date=request.valuation_date,
+            girbc_car=request.girbc_car, legacy_car=request.legacy_car,
+            inputs_json=json.dumps(request.inputs), results_json=json.dumps(request.results),
+        )
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        return {"success": True, "data": _solvency_run_to_dict(run, db)}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SolvencyCertificateRequest(BaseModel):
+    client_id:                            Optional[str] = None
+    company_name:                             Optional[str] = Field(None, description="Overrides the client's configured name on the certificate")
+    valuation_date:                               str = "FY2025"
+    appointed_actuary:                                str = "Charles Osei-Akoto"
+    qualifications:                                       str = "Fellow, Institute and Faculty of Actuaries (FIA)"
+    consulting_firm:                                          str = "Stallion Consultants Ltd"
+    capital_resources:                                            Optional[QualifyingCapitalResourcesRequest] = None
+    insurance_risk:                                                   Optional[InsuranceRiskExposuresRequest] = None
+    net_non_life_insurance_revenue:                                       float = 0.0
+    market_risk:                                                              Optional[MarketRiskExposuresRequest] = None
+    credit_risk:                                                                  Optional[CreditRiskExposuresRequest] = None
+    operational_risk:                                                                 Optional[OperationalRiskExposuresRequest] = None
+    legacy_inputs:                                                                        Optional[LegacySolvencyInputsRequest] = None
+
+
+@protected.post("/export/solvency-certificate")
+def export_solvency_certificate_endpoint(request: SolvencyCertificateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """GIRBC solvency certificate (.docx) — CAR summary, risk breakdown, capital composition, stress tests, actuarial opinion, signature block."""
+    try:
+        cap, ins_exp, revenue, mkt_exp, cred_exp, op_exp = _resolve_rbc_exposures(request)
+        ins = calculate_insurance_risk(ins_exp, revenue)
+        mkt = calculate_market_risk(mkt_exp)
+        cred = calculate_credit_risk(cred_exp)
+        op = calculate_operational_risk(op_exp)
+        sol = calculate_solvency(ins, mkt, cred, op, cap)
+
+        legacy_inputs = _resolve_legacy_inputs(request.client_id, request.legacy_inputs)
+        legacy_result = calculate_legacy_solvency(legacy_inputs) if legacy_inputs is not None else None
+
+        stress_results = run_stress_tests(ins_exp, revenue, mkt_exp, cred_exp, op_exp, cap)
+
+        display_name = request.company_name or (load_client(request.client_id).name if request.client_id else "Insurer")
+
+        docx_path = generate_girbc_certificate_from_results(
+            client_name=display_name, valuation_date=request.valuation_date, sol=sol, legacy_result=legacy_result,
+            stress_results=stress_results, appointed_actuary=request.appointed_actuary,
+            qualifications=request.qualifications, consulting_firm=request.consulting_firm,
+        )
+        filename = os.path.basename(docx_path)
+        result = {"word_download_url": f"/export/solvency-certificate/download/{filename}"}
+        _log_valuation_run(db, current_user, "solvency_certificate", request.model_dump(), result, client_id=request.client_id)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/export/solvency-certificate/download/{filename}")
+def download_solvency_certificate(filename: str):
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(SOLVENCY_WORD_GENERATED_DIR, safe_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=safe_name,
+    )
 
 
 @protected.get("/nic/quarters")

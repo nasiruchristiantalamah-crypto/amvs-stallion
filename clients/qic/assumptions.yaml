@@ -105,6 +105,15 @@ data_files:
   ulae_workbook:     "QIC ULAE (2025).xlsx"
   ulae_sheet:        "ULAE Calculation (Rev)"
 
+# The real GIRBC/RBC solvency return QIC actually filed with the NIC — see
+# engine/data_loader.py's load_rbc_solvency_data() and
+# clients/qic/client.yaml's rbc_data_folder (separate folder from
+# data_files above). Filename only here (committed); the folder path is
+# machine-specific (gitignored, client.yaml).
+rbc_data_files:
+  girbc_workbook: "Worksheets/QIC_GIRBC_Official_Return_2025 (version 1).xlsx"
+  legacy_workbook: "Worksheets/FCR 2025 Actual - QIC.xlsx"
+
 assumption_overrides: {}
 
 # Per-class reserving method override (default is chain_ladder — see
