@@ -104,13 +104,109 @@
   select, input[type="text"], input[type="number"], input[type="password"] { width: 100%; font-size: 13px; font-family: inherit; border: 1px solid #d7dae0; border-radius: 5px; padding: 7px 10px; color: #1a1a1a; background: white; }
   select:focus, input:focus { outline: none; border-color: #2E5090; box-shadow: 0 0 0 3px rgba(46,80,144,0.12); }
 
-  /* ── Login ── */
+  /* ── Login — split-screen showcase + form (Stallion Consultants brand) ── */
   #app-shell { display: none; }
-  #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #1F3864; }
-  .login-card { background: white; border-radius: 8px; padding: 36px 32px; width: 340px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
-  .login-title { font-size: 19px; font-weight: 700; color: #1F3864; margin-bottom: 4px; }
-  .login-sub { font-size: 12px; color: #8a8f98; margin-bottom: 24px; }
-  .login-error { display: none; background: #FCE8E6; border: 1px solid #c62828; color: #c62828; padding: 10px 14px; border-radius: 5px; font-size: 12px; margin-bottom: 14px; }
+
+  #login-screen {
+    display: flex; min-height: 100vh; width: 100%; background: #F5F5F5;
+    animation: loginFadeIn .6s ease;
+  }
+  @keyframes loginFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* Left panel — 60%: rotating photo slideshow + company showcase */
+  .login-showcase { position: relative; flex: 0 0 60%; overflow: hidden; background: #1F3864; }
+  .login-slide {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    background-size: cover; background-position: center;
+    opacity: 0; transition: opacity 1.4s ease;
+  }
+  .login-slide.active { opacity: 1; }
+  .login-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); z-index: 1; }
+  .login-showcase-content {
+    position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column;
+    justify-content: space-between; padding: 40px 48px; color: #fff;
+  }
+
+  .login-brand-title { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; color: #fff; }
+  .login-brand-sub { font-size: 12.5px; color: #C9A84C; font-weight: 600; letter-spacing: 0.5px; margin-top: 3px; text-transform: uppercase; }
+
+  .login-tagline-wrap { flex: 1; display: flex; align-items: center; max-width: 620px; }
+  .login-tagline {
+    font-size: 30px; font-weight: 700; line-height: 1.3; color: #fff;
+    opacity: 0; transform: translateY(8px); transition: opacity .8s ease, transform .8s ease;
+    position: absolute;
+  }
+  .login-tagline.active { opacity: 1; transform: translateY(0); position: relative; }
+
+  .login-info-panel {
+    background: rgba(0,0,0,0.35); border-radius: 10px; padding: 22px 26px;
+    display: grid; grid-template-columns: 1fr 1.6fr; gap: 32px; backdrop-filter: blur(2px);
+  }
+  .login-info-heading { font-size: 11px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #C9A84C; margin-bottom: 8px; }
+  .login-info-panel address, .login-info-panel p { font-style: normal; font-size: 12.5px; line-height: 1.7; color: rgba(255,255,255,0.9); }
+  .login-services-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .login-service-dept { font-size: 11.5px; font-weight: 700; color: #fff; margin-bottom: 5px; }
+  .login-service-list { list-style: none; font-size: 11.5px; line-height: 1.75; color: rgba(255,255,255,0.82); }
+  .login-service-list li::before { content: "— "; color: #C9A84C; }
+
+  .login-footer-row { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 18px; }
+  .login-dots { display: flex; gap: 7px; }
+  .login-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.4); cursor: pointer; transition: background .2s, transform .2s; }
+  .login-dot.active { background: #C9A84C; transform: scale(1.3); }
+  .login-copyright { font-size: 10.5px; color: rgba(255,255,255,0.55); text-align: right; line-height: 1.6; }
+
+  /* Right panel — 40%: login form */
+  .login-form-panel { flex: 0 0 40%; display: flex; align-items: center; justify-content: center; background: #fff; padding: 40px; }
+  .login-form-card { width: 100%; max-width: 360px; }
+  .login-amvs-logo { font-size: 30px; font-weight: 700; color: #1F3864; letter-spacing: 0.5px; }
+  .login-amvs-sub { font-size: 13px; color: #444; margin-top: 6px; font-weight: 500; }
+  .login-amvs-org { font-size: 11.5px; color: #8a8f98; margin-top: 3px; margin-bottom: 30px; }
+
+  .login-field { margin-bottom: 16px; }
+  .login-field label { display: block; font-size: 11.5px; font-weight: 600; color: #444; margin-bottom: 6px; }
+  .login-input-wrap { position: relative; display: flex; align-items: center; }
+  .login-input-wrap svg { position: absolute; left: 12px; color: #9aa0a8; pointer-events: none; }
+  .login-input-wrap input {
+    width: 100%; padding: 10px 12px 10px 38px; border: 1px solid #d7dae0; border-radius: 6px;
+    font-size: 13px; font-family: inherit; background: #fff; transition: border-color .12s, box-shadow .12s;
+  }
+  .login-input-wrap input:focus { outline: none; border-color: #1F3864; box-shadow: 0 0 0 3px rgba(31,56,100,0.10); }
+  .login-pw-toggle {
+    position: absolute; right: 10px; background: none; border: none; cursor: pointer;
+    color: #9aa0a8; padding: 4px; display: flex; align-items: center;
+  }
+  .login-pw-toggle:hover { color: #1F3864; }
+
+  .login-remember-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .login-remember-label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #555; cursor: pointer; user-select: none; }
+  .login-remember-label input { cursor: pointer; }
+
+  .login-submit-btn {
+    width: 100%; padding: 12px; border-radius: 6px; border: none; background: #1F3864; color: #fff;
+    font-size: 13.5px; font-weight: 700; font-family: inherit; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background .15s, color .15s;
+  }
+  .login-submit-btn:hover:not(:disabled) { background: #16274a; color: #C9A84C; }
+  .login-submit-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+  .login-submit-btn.success { background: #2C5233; }
+
+  .login-links-row { display: flex; justify-content: space-between; margin-top: 16px; font-size: 11.5px; }
+  .login-links-row a { color: #1F3864; text-decoration: none; font-weight: 600; }
+  .login-links-row a:hover { text-decoration: underline; color: #C9A84C; }
+
+  .login-error {
+    display: none; background: #FCE8E6; border: 1px solid #c62828; color: #c62828;
+    padding: 10px 14px; border-radius: 5px; font-size: 12px; margin-top: 14px;
+  }
+
+  .login-form-footer { margin-top: 34px; text-align: center; font-size: 10.5px; color: #9aa0a8; line-height: 1.8; }
+
+  /* Mobile — showcase collapses, only the form shows */
+  @media (max-width: 900px) {
+    .login-showcase { display: none; }
+    .login-form-panel { flex: 1 1 100%; }
+  }
 
   /* ── Buttons ── */
   .btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 5px; font-size: 12.5px; cursor: pointer; font-weight: 600; border: 1px solid #d7dae0; background: white; color: #333; transition: background .12s, border-color .12s; font-family: inherit; }
@@ -170,22 +266,137 @@
 </head>
 <body>
 
-<!-- ══ LOGIN ══ -->
+<!-- ══ LOGIN — Stallion Consultants split-screen showcase + form ══ -->
 <div id="login-screen">
-  <form class="login-card" onsubmit="doLogin(event)">
-    <div class="login-title">AMVS</div>
-    <div class="login-sub">Ghana Actuarial Modelling & Valuation System</div>
-    <div class="login-error" id="login-error"></div>
-    <div class="form-group" style="margin-bottom:14px">
-      <label>Email</label>
-      <input type="text" id="login-email" autocomplete="username" placeholder="you@company.com">
+  <div class="login-showcase">
+    <!--
+      ROTATING BACKGROUND PHOTOS — real Stallion Consultants event photos
+      (Insurance Industry Training, with Zamara). Images live in
+      images/stallion/ next to this HTML file (slide1.jpg .. slide7.jpg —
+      see the LOGIN_SLIDES array in the script below), plus a matching copy
+      in docs/images/stallion/ for GitHub Pages.
+
+      TO REPLACE WITH DIFFERENT PHOTOS LATER:
+        1. Add new images to docs/images/stallion/ (the folder GitHub Pages
+           actually serves) — and to dashboard.html/images/stallion/ and
+           nic_report.html/images/stallion/ too, so local testing of the
+           source files still works (this project keeps docs/ as a byte-
+           identical mirror of the two source HTML files).
+        2. Recommended size ~1920px on the long side, JPEG, under 500KB
+           each — resize/compress before adding (e.g. Pillow) so the login
+           page stays fast to load.
+        3. Either overwrite the existing slideN.jpg files with the same
+           names, or add new filenames and update the LOGIN_SLIDES array
+           below to match.
+        4. Push to GitHub — GitHub Pages serves docs/images/stallion/
+           automatically, no other configuration needed.
+    -->
+    <div id="login-slides"></div>
+    <div class="login-overlay"></div>
+    <div class="login-showcase-content">
+      <div>
+        <div class="login-brand-title">STALLION CONSULTANTS LTD</div>
+        <div class="login-brand-sub">Actuarial Excellence</div>
+      </div>
+
+      <div class="login-tagline-wrap" id="login-tagline-wrap"></div>
+
+      <div>
+        <div class="login-info-panel">
+          <div>
+            <div class="login-info-heading">Our Location</div>
+            <address>
+              3rd Floor, Gulf House<br>
+              Tetteh Quarshie Interchange<br>
+              Airport West<br>
+              P.O. Box KA 30681, KIA<br>
+              Accra, Ghana
+            </address>
+          </div>
+          <div>
+            <div class="login-info-heading">Our Services</div>
+            <div class="login-services-cols">
+              <div>
+                <div class="login-service-dept">Insurance Department</div>
+                <ul class="login-service-list">
+                  <li>Actuarial Valuations and IFRS 17 Reporting</li>
+                  <li>Product Pricing and Development</li>
+                  <li>Risk-Based Capital (GIRBC) Assessment</li>
+                  <li>Financial Condition Reports (FCR)</li>
+                  <li>Claims Reserving and IBNR Estimation</li>
+                  <li>Reinsurance Optimisation</li>
+                </ul>
+              </div>
+              <div>
+                <div class="login-service-dept">Pension Department</div>
+                <ul class="login-service-list">
+                  <li>Pension Fund Valuations</li>
+                  <li>Liability Driven Investment (LDI) Advice</li>
+                  <li>Retirement Benefit Scheme Design</li>
+                  <li>Pension Regulatory Compliance</li>
+                  <li>Member Benefit Calculations</li>
+                  <li>Scheme Wind-up and Restructuring</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="login-footer-row">
+          <div class="login-dots" id="login-dots"></div>
+          <div class="login-copyright">
+            © 2026 Stallion Consultants Ltd. All rights reserved.<br>
+            Regulated by the National Insurance Commission (NIC)
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="form-group" style="margin-bottom:20px">
-      <label>Password</label>
-      <input type="password" id="login-password" autocomplete="current-password">
+  </div>
+
+  <div class="login-form-panel">
+    <div class="login-form-card">
+      <div class="login-amvs-logo">AMVS</div>
+      <div class="login-amvs-sub">Actuarial Modelling &amp; Valuation System</div>
+      <div class="login-amvs-org">Stallion Consultants Ltd — Internal Platform</div>
+
+      <form onsubmit="doLogin(event)">
+        <div class="login-field">
+          <label>Email address</label>
+          <div class="login-input-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="m22 6-10 7L2 6"/></svg>
+            <input type="text" id="login-email" autocomplete="username" placeholder="you@company.com">
+          </div>
+        </div>
+        <div class="login-field">
+          <label>Password</label>
+          <div class="login-input-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <input type="password" id="login-password" autocomplete="current-password" style="padding-right:38px">
+            <button type="button" class="login-pw-toggle" id="login-pw-toggle" onclick="toggleLoginPassword()" title="Show/hide password">
+              <svg id="login-pw-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="login-remember-row">
+          <label class="login-remember-label"><input type="checkbox" id="login-remember"> Remember me</label>
+        </div>
+
+        <button type="submit" class="login-submit-btn" id="btn-login">Sign In</button>
+
+        <div class="login-error" id="login-error"></div>
+
+        <div class="login-links-row">
+          <a href="#" onclick="alert('Password reset is not yet available — contact your administrator.');return false">Forgot password?</a>
+          <a href="#" onclick="alert('Contact your Stallion Consultants administrator to request access.');return false">Need access?</a>
+        </div>
+      </form>
+
+      <div class="login-form-footer">
+        Secure login — all data encrypted in transit<br>
+        AMVS v1.0 — Built for Ghanaian Actuarial Practice
+      </div>
     </div>
-    <button type="submit" class="btn btn-primary" id="btn-login" style="width:100%;justify-content:center">Log in</button>
-  </form>
+  </div>
 </div>
 
 <div class="shell" id="app-shell">
@@ -1620,13 +1831,67 @@ function toggleNavGroup(headerEl) {
   headerEl.nextElementSibling.classList.toggle('collapsed');
 }
 
+// ── Login showcase — rotating photos + taglines (Stallion Consultants) ──────
+// Real event photos (Insurance Industry Training, with Zamara) — see the
+// HTML comment above #login-slides for how to swap these out later.
+const LOGIN_SLIDES = [
+  'images/stallion/slide1.jpg', 'images/stallion/slide2.jpg', 'images/stallion/slide3.jpg',
+  'images/stallion/slide4.jpg', 'images/stallion/slide5.jpg', 'images/stallion/slide6.jpg',
+  'images/stallion/slide7.jpg',
+];
+const LOGIN_TAGLINES = [
+  "Empowering Ghana's Insurance Industry with Actuarial Excellence",
+  "Trusted Actuarial Solutions for Life, Health and Non-Life Insurance",
+  "IFRS 17 Compliant Valuations Built for the Ghanaian Market",
+  "Partnering with Insurers Across Ghana to Strengthen Financial Resilience",
+  "Rigorous. Independent. Ghana-Focused. Actuarial Consulting.",
+];
+let loginSlideIndex = 0;
+let loginSlideTimer = null;
+
+function initLoginSlideshow() {
+  const slidesEl = document.getElementById('login-slides');
+  const dotsEl = document.getElementById('login-dots');
+  const taglineWrap = document.getElementById('login-tagline-wrap');
+  if (!slidesEl) return;   // not on this page
+
+  slidesEl.innerHTML = LOGIN_SLIDES.map(src => `<div class="login-slide" style="background-image:url('${src}')"></div>`).join('');
+  dotsEl.innerHTML = LOGIN_SLIDES.map((_, i) => `<div class="login-dot" onclick="showLoginSlide(${i})"></div>`).join('');
+  taglineWrap.innerHTML = LOGIN_TAGLINES.map(t => `<div class="login-tagline">${t}</div>`).join('');
+
+  showLoginSlide(0);
+  loginSlideTimer = setInterval(() => showLoginSlide((loginSlideIndex + 1) % LOGIN_SLIDES.length), 5000);
+}
+
+function showLoginSlide(index) {
+  loginSlideIndex = index;
+  document.querySelectorAll('.login-slide').forEach((el, i) => el.classList.toggle('active', i === index));
+  document.querySelectorAll('.login-dot').forEach((el, i) => el.classList.toggle('active', i === index));
+  // Taglines rotate independently of (but in step with) the slide count —
+  // if there are fewer taglines than slides, cycle through them modulo.
+  document.querySelectorAll('.login-tagline').forEach((el, i) => el.classList.toggle('active', i === index % LOGIN_TAGLINES.length));
+  if (loginSlideTimer) { clearInterval(loginSlideTimer); loginSlideTimer = setInterval(() => showLoginSlide((loginSlideIndex + 1) % LOGIN_SLIDES.length), 5000); }
+}
+
+function toggleLoginPassword() {
+  const input = document.getElementById('login-password');
+  const icon = document.getElementById('login-pw-icon');
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  icon.innerHTML = show
+    ? '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.6 18.6 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+    : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/>';
+}
+
 async function doLogin(event) {
   if (event) event.preventDefault();
   const email    = document.getElementById('login-email').value.trim();
   const password = document.getElementById('login-password').value;
+  const remember = document.getElementById('login-remember').checked;
   const btn      = document.getElementById('btn-login');
   const errEl    = document.getElementById('login-error');
   errEl.style.display = 'none';
+  btn.classList.remove('success');
 
   if (!email || !password) {
     errEl.textContent = 'Enter both email and password.';
@@ -1635,7 +1900,7 @@ async function doLogin(event) {
   }
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Logging in...';
+  btn.innerHTML = '<span class="spinner"></span> Signing in...';
   try {
     const resp = await fetch(API + '/auth/login', {
       method: 'POST',
@@ -1643,18 +1908,35 @@ async function doLogin(event) {
       body: new URLSearchParams({ username: email, password: password }).toString(),
     });
     const d = await resp.json();
-    if (!resp.ok) throw new Error(d.detail || 'Login failed');
+    if (!resp.ok) throw new Error('Invalid email or password. Please try again.');
     AUTH_TOKEN = d.access_token;
     document.getElementById('login-password').value = '';
-    showApp();
-    checkAPI();
+    if (remember) localStorage.setItem('amvs_remember_email', email);
+    else localStorage.removeItem('amvs_remember_email');
+
+    btn.innerHTML = '&#10003; Success';
+    btn.classList.add('success');
+    if (loginSlideTimer) clearInterval(loginSlideTimer);
+    setTimeout(() => { showApp(); checkAPI(); }, 500);
+    return;
   } catch (e) {
-    errEl.textContent = '' + e.message;
+    errEl.textContent = e.message || 'Invalid email or password. Please try again.';
     errEl.style.display = 'block';
   }
   btn.disabled = false;
-  btn.innerHTML = 'Log in';
+  btn.innerHTML = 'Sign In';
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  initLoginSlideshow();
+  const rememberedEmail = localStorage.getItem('amvs_remember_email');
+  if (rememberedEmail) {
+    const emailEl = document.getElementById('login-email');
+    const rememberEl = document.getElementById('login-remember');
+    if (emailEl) emailEl.value = rememberedEmail;
+    if (rememberEl) rememberEl.checked = true;
+  }
+});
 
 function fmt(n) {
   if (typeof n !== 'number') return n;
