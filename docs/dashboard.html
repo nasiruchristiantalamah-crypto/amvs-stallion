@@ -156,7 +156,8 @@
   .login-copyright { font-size: 10.5px; color: rgba(255,255,255,0.55); text-align: right; line-height: 1.6; }
 
   /* Right panel — 40%: login form */
-  .login-form-panel { flex: 0 0 40%; display: flex; align-items: center; justify-content: center; background: #fff; padding: 40px; }
+  .login-form-panel { position: relative; flex: 0 0 40%; display: flex; align-items: center; justify-content: center; background: #fff; padding: 40px; }
+  .login-panel-accent { position: absolute; top: 0; left: 0; right: 0; height: 5px; background: linear-gradient(90deg, #1F3864, #5b5967); }
   .login-form-card { width: 100%; max-width: 360px; }
   .login-brand-mark { margin-bottom: 26px; }
   .login-brand-name { font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: 46px; color: #5b5967; letter-spacing: 0.5px; line-height: 1; }
@@ -205,7 +206,10 @@
     padding: 10px 14px; border-radius: 5px; font-size: 12px; margin-top: 14px;
   }
 
-  .login-form-footer { margin-top: 34px; text-align: center; font-size: 10.5px; color: #9aa0a8; line-height: 1.8; }
+  .login-trust-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+  .login-trust-badge { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; color: #4a5058; background: #f4f6f8; border: 1px solid #e3e7ec; border-radius: 20px; padding: 5px 11px; }
+  .login-trust-badge svg { flex-shrink: 0; color: #1F3864; }
+  .login-form-footer { margin-top: 14px; text-align: center; font-size: 10.5px; color: #9aa0a8; line-height: 1.8; }
 
   /* Mobile — showcase collapses, only the form shows */
   @media (max-width: 900px) {
@@ -358,6 +362,7 @@
   </div>
 
   <div class="login-form-panel">
+    <div class="login-panel-accent"></div>
     <div class="login-form-card">
       <div class="login-brand-mark">
         <div class="login-brand-name">Stallion</div>
@@ -399,6 +404,21 @@
           <a href="#" onclick="alert('Contact your Stallion Consultants administrator to request access.');return false">Need access?</a>
         </div>
       </form>
+
+      <div class="login-trust-row">
+        <div class="login-trust-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 6v6c0 5 3.8 9 9 10 5.2-1 9-5 9-10V6z"/><path d="m9 12 2 2 4-4"/></svg>
+          NIC Regulated
+        </div>
+        <div class="login-trust-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+          IFRS 17 Compliant
+        </div>
+        <div class="login-trust-badge">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Data Encrypted
+        </div>
+      </div>
 
       <div class="login-form-footer">
         Secure login — all data encrypted in transit<br>
