@@ -171,6 +171,12 @@ class Product:
                                                  # (daily = premium collected as daily contributions,
                                                  # aggregated to a monthly amount before running the
                                                  # projection — e.g. Afentoboa Plus's GHS 5/day minimum)
+    # "Limited pay" — premiums stop being collected after this many policy
+    # years, while cover (and therefore benefit/expense cash flows)
+    # continues for the product's full policy_term_years (or to max_age
+    # for whole life) — e.g. a "10-pay whole life" plan. None = premiums
+    # are payable for the product's full duration (the common case).
+    premium_payment_term_years: Optional[int] = None
     measurement_model:  str = "gmm"            # "gmm" or "paa"
 
     # Free-form classification, not a closed enum (same philosophy as
@@ -221,7 +227,8 @@ class Product:
     def to_dict(self) -> Dict[str, Any]:
         return dict(
             name=self.name, policy_term_years=self.policy_term_years,
-            premium_mode=self.premium_mode, measurement_model=self.measurement_model,
+            premium_mode=self.premium_mode, premium_payment_term_years=self.premium_payment_term_years,
+            measurement_model=self.measurement_model,
             product_type=self.product_type,
             riders=[r.to_dict() for r in self.riders],
             dependants=[d.to_dict() for d in self.dependants],

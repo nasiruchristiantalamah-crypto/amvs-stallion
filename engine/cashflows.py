@@ -103,7 +103,16 @@ def calculate_cash_flows(
         exp_inf_rate = assumptions.expense_inflation_monthly
 
         # ── GROSS / NET PREMIUM ─────────────────────────────────────────
-        gross_prem = lx * monthly_premium
+        # "Limited pay" products (product.premium_payment_term_years set)
+        # stop collecting premium after that many policy years while cover
+        # continues — e.g. a 10-pay whole life plan. Commission below is
+        # derived from gross_prem, so it correctly stops too once premium
+        # does, with no separate check needed.
+        premium_still_payable = (
+            product.premium_payment_term_years is None
+            or pol_year <= product.premium_payment_term_years
+        )
+        gross_prem = lx * monthly_premium if premium_still_payable else 0.0
         net_prem   = gross_prem * assumptions.collection_rate
 
         # ── COMMISSION ───────────────────────────────────────────────────

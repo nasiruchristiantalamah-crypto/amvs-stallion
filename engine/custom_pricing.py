@@ -173,10 +173,13 @@ def build_custom_product(spec: Dict[str, Any]) -> Product:
             benefit_overrides          = {str(k): float(v) for k, v in (d.get("benefit_overrides") or {}).items()},
         ))
 
+    premium_payment_term_years = spec.get("premium_payment_term_years")
+
     return Product(
         name                 = spec.get("product_name", "Custom Product"),
         policy_term_years    = policy_term_years,
         premium_mode         = spec.get("premium_mode", "monthly"),
+        premium_payment_term_years = int(premium_payment_term_years) if premium_payment_term_years else None,
         measurement_model    = "paa" if policy_term_years and policy_term_years <= 1 else "gmm",
         product_type         = spec.get("product_type", "custom"),
         riders               = riders,

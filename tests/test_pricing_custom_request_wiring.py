@@ -142,3 +142,26 @@ def test_mortality_multiple_rider_cost_scales_with_age_like_death_benefit():
     premiums = [tpd_premium(a) for a in (35, 45, 55, 65)]
     assert premiums == sorted(premiums)
     assert len(set(premiums)) == len(premiums)   # strictly increasing, no two equal
+
+
+def test_premium_payment_term_years_is_respected():
+    # Regression: premium_payment_term_years was accepted by the API and
+    # stored nowhere — Product had no field for it, so a "10-pay" product
+    # silently priced as if premiums ran the product's full duration.
+    # Confirmed directly before the fix: identical premium (49.11)
+    # whether premium_payment_term_years was None, 10, or 5.
+    def price(payment_term):
+        req = CustomProductRequest(
+            product_name="Test", product_type="endowment", policy_term_years=20,
+            sum_assured=50000, entry_age=35, premium_payment_term_years=payment_term,
+            riders=[{"name": "Maturity", "benefit_type": "maturity", "benefit_amount": 50000,
+                     "rider_term_years": 20, "waiting_period_months": 0}],
+        )
+        product = _build_product_from_request(req)
+        return run_custom_pricing(product, _ghana_assumptions(35))["monthly_premium"]
+
+    full_term = price(None)
+    pay_10 = price(10)
+    pay_5 = price(5)
+    # Fewer years to fund the same benefits -> each premium must be bigger.
+    assert full_term < pay_10 < pay_5
