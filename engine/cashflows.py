@@ -27,7 +27,7 @@ What this file does:
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from engine.assumptions import ProductAssumptions
+from engine.assumptions import ProductAssumptions, FixedScaleCommission
 from engine.product import Product
 from engine.decrement import DecrementRow
 
@@ -116,8 +116,17 @@ def calculate_cash_flows(
         net_prem   = gross_prem * assumptions.collection_rate
 
         # ── COMMISSION ───────────────────────────────────────────────────
-        comm_rate  = assumptions.commission.get_rate_for_policy_year(pol_year)
-        commission = gross_prem * comm_rate
+        # Two structurally different bases: a percentage of that month's
+        # premium (CommissionSchedule — the common case), or a flat GHS
+        # amount per in-force policy regardless of what premium was
+        # charged (FixedScaleCommission — e.g. a "transport support"
+        # allowance). lx-weighted either way, same as every other line
+        # here, so it correctly shrinks as the cohort decrements.
+        if isinstance(assumptions.commission, FixedScaleCommission):
+            commission = lx * assumptions.commission.get_monthly_amount_for_policy_year(pol_year)
+        else:
+            comm_rate  = assumptions.commission.get_rate_for_policy_year(pol_year)
+            commission = gross_prem * comm_rate
 
         # ── EXPENSES ─────────────────────────────────────────────────────
         if month == 1:

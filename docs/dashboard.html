@@ -1222,16 +1222,40 @@
       </div>
 
       <div class="panel" style="margin-bottom:16px">
-        <div class="panel-title">Commission assumptions <span style="font-weight:normal;color:#888;font-size:12px">— rate by policy year</span></div>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Policy year</th><th>Commission rate (%)</th><th></th></tr></thead>
-            <tbody id="am-commission-body"></tbody>
-          </table>
+        <div class="panel-title">Commission assumptions</div>
+        <div class="form-group" style="max-width:420px;margin-bottom:14px">
+          <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Commission type</label>
+          <select id="am-commission-type" onchange="onCommissionTypeChanged()">
+            <option value="percentage">Percentage of premium — rate by policy year</option>
+            <option value="fixed_scale">Fixed GHS amount per policy — Transport Commission Scale</option>
+          </select>
         </div>
-        <div style="margin-top:10px">
-          <button class="btn btn-primary" onclick="addAssumptionRow('am-commission-body', 'commission')">+ Add year</button>
-          <button class="btn" onclick="resetSectionToGhanaDefaults('commission')">Reset to Ghana defaults</button>
+
+        <div id="am-commission-percentage-panel">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Policy year</th><th>Commission rate (%)</th><th></th></tr></thead>
+              <tbody id="am-commission-body"></tbody>
+            </table>
+          </div>
+          <div style="margin-top:10px">
+            <button class="btn btn-primary" onclick="addAssumptionRow('am-commission-body', 'commission')">+ Add year</button>
+            <button class="btn" onclick="resetSectionToGhanaDefaults('commission')">Reset to Ghana defaults</button>
+          </div>
+        </div>
+
+        <div id="am-commission-fixed-panel" style="display:none">
+          <div style="font-size:12px;color:#888;margin-bottom:10px">A flat GHS amount per in-force policy per year — not a percentage of premium — e.g. a "transport support" allowance layered on top of a distribution structure.</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Policy year</th><th>Annual amount (GHS)</th><th>Monthly amount (GHS)</th><th></th></tr></thead>
+              <tbody id="am-commission-fixed-body"></tbody>
+            </table>
+          </div>
+          <div style="margin-top:10px">
+            <button class="btn btn-primary" onclick="addFixedCommissionRow()">+ Add year</button>
+            <button class="btn btn-gold" onclick="loadTransportCommissionScale()">Load "Transport Commission Scale (GHS 700 Base)"</button>
+          </div>
         </div>
       </div>
 
@@ -3303,6 +3327,60 @@ function resetSectionToGhanaDefaults(section) {
   if (section === 'commission') renderRatesTable('am-commission-body', 'commission', ghanaDefaultsCache.commissions);
 }
 
+// ── Fixed-scale commission ("Transport Commission Scale") ──────────────────
+// A flat GHS amount per in-force policy per year, not a percentage of
+// premium — mutually exclusive with the percentage table above; only one
+// of the two panels is shown/sent at a time (am-commission-type decides).
+const TRANSPORT_COMMISSION_SCALE_GHS700_BASE = { 1: 910.00, 2: 840.00, 3: 700.00, 4: 560.00, 5: 490.00 };
+
+function onCommissionTypeChanged() {
+  const type = document.getElementById('am-commission-type').value;
+  document.getElementById('am-commission-percentage-panel').style.display = type === 'fixed_scale' ? 'none' : 'block';
+  document.getElementById('am-commission-fixed-panel').style.display      = type === 'fixed_scale' ? 'block' : 'none';
+}
+
+function _fixedCommissionRowHtml(year, annualAmount) {
+  const monthly = (parseFloat(annualAmount) / 12).toFixed(2);
+  return `<tr>
+    <td><input type="number" class="am-commission-fixed-year" value="${year}" min="1" style="width:90px"></td>
+    <td><input type="number" class="am-commission-fixed-amount" value="${annualAmount}" step="1" style="width:110px" oninput="this.closest('tr').querySelector('.am-commission-fixed-monthly').textContent = (parseFloat(this.value || 0) / 12).toFixed(2)"></td>
+    <td class="am-commission-fixed-monthly" style="color:#888">${monthly}</td>
+    <td><button class="btn" onclick="this.closest('tr').remove()" style="padding:4px 10px" title="Remove this year">×</button></td>
+  </tr>`;
+}
+
+function renderFixedCommissionTable(ratesObj) {
+  const tbody = document.getElementById('am-commission-fixed-body');
+  const years = Object.keys(ratesObj || {}).map(Number).sort((a, b) => a - b);
+  tbody.innerHTML = years.map(y => _fixedCommissionRowHtml(y, ratesObj[y].toFixed(2))).join('');
+}
+
+function addFixedCommissionRow() {
+  const tbody = document.getElementById('am-commission-fixed-body');
+  const yearInputs = tbody.querySelectorAll('.am-commission-fixed-year');
+  const maxYear = yearInputs.length ? Math.max(...Array.from(yearInputs).map(el => parseInt(el.value) || 0)) : 0;
+  tbody.insertAdjacentHTML('beforeend', _fixedCommissionRowHtml(maxYear + 1, '0.00'));
+}
+
+function collectFixedCommissionTable() {
+  const tbody = document.getElementById('am-commission-fixed-body');
+  const yearInputs = tbody.querySelectorAll('.am-commission-fixed-year');
+  const amountInputs = tbody.querySelectorAll('.am-commission-fixed-amount');
+  const result = {};
+  for (let i = 0; i < yearInputs.length; i++) {
+    const y = parseInt(yearInputs[i].value);
+    const amt = parseFloat(amountInputs[i].value);
+    if (!isNaN(y) && !isNaN(amt)) result[y] = amt;
+  }
+  return result;
+}
+
+function loadTransportCommissionScale() {
+  document.getElementById('am-commission-type').value = 'fixed_scale';
+  onCommissionTypeChanged();
+  renderFixedCommissionTable(TRANSPORT_COMMISSION_SCALE_GHS700_BASE);
+}
+
 function syncMortalityLoadingFromSlider() { syncPairFromSlider('am-mortality-loading-slider', 'am-mortality-loading', 'am-mortality-loading-display'); }
 function syncMortalityLoadingFromNumber() { syncPairFromNumber('am-mortality-loading-slider', 'am-mortality-loading', 'am-mortality-loading-display'); }
 
@@ -3327,6 +3405,9 @@ function renderAssumptionsForm(set) {
 
   renderRatesTable('am-lapse-body', 'lapse', set.lapses);
   renderRatesTable('am-commission-body', 'commission', set.commissions);
+  document.getElementById('am-commission-type').value = set.commission_type || 'percentage';
+  renderFixedCommissionTable(set.fixed_commission_scale || {});
+  onCommissionTypeChanged();
 
   document.getElementById('am-exp-policy-fee').value    = set.expenses.policy_fee;
   document.getElementById('am-exp-acquisition').value   = set.expenses.acquisition_cost;
@@ -3374,6 +3455,8 @@ function collectAssumptionsFromForm() {
     },
     lapses:      collectRatesTable('am-lapse-body', 'lapse'),
     commissions: collectRatesTable('am-commission-body', 'commission'),
+    commission_type:        document.getElementById('am-commission-type').value,
+    fixed_commission_scale: collectFixedCommissionTable(),
     expenses: {
       policy_fee:       parseFloat(document.getElementById('am-exp-policy-fee').value),
       acquisition_cost: parseFloat(document.getElementById('am-exp-acquisition').value),

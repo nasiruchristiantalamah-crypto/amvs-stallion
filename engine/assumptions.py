@@ -22,7 +22,7 @@ What this file does:
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 from enum import Enum
 
 from data.table_validation import validate_rate_table
@@ -178,6 +178,7 @@ class CommissionSchedule:
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "CommissionSchedule":
         kwargs = dict(d)
+        kwargs.pop("type", None)   # discriminator used by ProductAssumptions.from_dict, not a real field
         if kwargs.get("rates"):
             kwargs["rates"] = {int(k): float(v) for k, v in kwargs["rates"].items()}
         schedule = cls(**kwargs)
@@ -185,7 +186,10 @@ class CommissionSchedule:
         return schedule
 
     def to_dict(self) -> Dict[str, Any]:
-        d = dict(initial_rate=self.initial_rate, renewal_rate=self.renewal_rate)
+        # "type" lets ProductAssumptions.from_dict tell a percentage
+        # schedule apart from a FixedScaleCommission when deserializing —
+        # both dataclasses share no distinguishing field shape otherwise.
+        d = dict(type="percentage", initial_rate=self.initial_rate, renewal_rate=self.renewal_rate)
         if self.rates:
             d["rates"] = {str(k): v for k, v in self.rates.items()}
         return d
@@ -215,6 +219,82 @@ def validate_commission_schedule(schedule: "CommissionSchedule") -> None:
             {1: schedule.initial_rate, 2: schedule.renewal_rate},
             label="commission schedule", key_label="policy year", require_contiguous=False,
         )
+
+
+# ── Fixed-scale commission (flat GHS per policy, not a % of premium) ──────────
+
+@dataclass
+class FixedScaleCommission:
+    """
+    An alternative to CommissionSchedule for distribution structures that
+    pay agents a flat GHS amount per in-force policy per year — not a
+    percentage of premium — varying by policy year. Common in Ghanaian
+    microinsurance as a "transport support" allowance layered on top of
+    (or instead of) a percentage commission.
+
+    rates = {policy_year: annual GHS amount per policy}, e.g. the named
+    "Transport Commission Scale (GHS 700 Base)" preset:
+        {1: 910.0, 2: 840.0, 3: 700.0, 4: 560.0, 5: 490.0}
+    — a scaled allowance off a GHS 700 base rate (130% in year 1, 120% in
+    year 2, 100% in year 3, 80% in year 4, 70% from year 5 onward).
+
+    Lookup is the same step-function-held-at-last-defined-year design as
+    CommissionSchedule.rates and LapseSchedule — a sparse schedule like
+    {1: 910.0, 5: 490.0} holds GHS 910 for years 2-4 too.
+
+    engine/cashflows.py checks which type ProductAssumptions.commission
+    actually is (isinstance) and applies GHS per in-force policy here
+    instead of a percentage of that month's premium.
+    """
+    rates: Dict[int, float]   # {policy_year: annual GHS amount per policy}
+
+    def get_annual_amount_for_policy_year(self, policy_year: int) -> float:
+        years = sorted(self.rates.keys())
+        applicable_year = years[0]
+        for y in years:
+            if y <= policy_year:
+                applicable_year = y
+            else:
+                break
+        return self.rates[applicable_year]
+
+    def get_monthly_amount_for_policy_year(self, policy_year: int) -> float:
+        return self.get_annual_amount_for_policy_year(policy_year) / 12.0
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "FixedScaleCommission":
+        rates = {int(k): float(v) for k, v in d.get("rates", d).items()}
+        schedule = cls(rates=rates)
+        validate_fixed_scale_commission(schedule)
+        return schedule
+
+    def to_dict(self) -> Dict[str, Any]:
+        # "type" lets ProductAssumptions.from_dict tell this apart from a
+        # percentage CommissionSchedule when deserializing.
+        return {"type": "fixed_scale", "rates": {str(k): v for k, v in self.rates.items()}}
+
+
+def validate_fixed_scale_commission(schedule: "FixedScaleCommission") -> None:
+    """
+    Check a fixed-scale commission schedule for reasonableness: no
+    negative GHS amounts, and at least one policy year defined. Unlike a
+    percentage schedule there's no upper bound to check (a GHS amount
+    isn't capped at 100 the way a rate is).
+    """
+    if not schedule.rates:
+        raise ValueError("fixed-scale commission schedule must have at least one policy year defined")
+    negative = {y: v for y, v in schedule.rates.items() if v < 0}
+    if negative:
+        raise ValueError(f"fixed-scale commission schedule has negative GHS amounts: {negative}")
+
+
+def transport_commission_scale_ghs700_base() -> "FixedScaleCommission":
+    """
+    Named preset: "Transport Commission Scale (GHS 700 Base)" — a real
+    Ghanaian microinsurance distribution structure, scaled off a GHS 700
+    base rate (130% / 120% / 100% / 80% / 70% for policy years 1-5+).
+    """
+    return FixedScaleCommission(rates={1: 910.0, 2: 840.0, 3: 700.0, 4: 560.0, 5: 490.0})
 
 
 # ── Main assumptions dataclass ────────────────────────────────────────────────
@@ -293,7 +373,11 @@ class ProductAssumptions:
         return self.renewal_expense_annual / 12
 
     # ── Commission ─────────────────────────────────────────────────────────
-    commission: CommissionSchedule = field(default_factory=CommissionSchedule)
+    # Either a percentage-of-premium CommissionSchedule (the common case)
+    # or a FixedScaleCommission (flat GHS per policy per year, e.g. a
+    # "transport support" allowance) — engine/cashflows.py checks which
+    # one this actually is at calculation time.
+    commission: Union[CommissionSchedule, FixedScaleCommission] = field(default_factory=CommissionSchedule)
 
     # ── Profit target ──────────────────────────────────────────────────────
     target_profit_margin: float = 0.15
@@ -325,7 +409,10 @@ class ProductAssumptions:
             )
         d["lapse_schedule"] = LapseSchedule.from_dict(d["lapse_schedule"])
         if "commission" in d:
-            d["commission"] = CommissionSchedule.from_dict(d["commission"])
+            if d["commission"].get("type") == "fixed_scale":
+                d["commission"] = FixedScaleCommission.from_dict(d["commission"])
+            else:
+                d["commission"] = CommissionSchedule.from_dict(d["commission"])
         return cls(**d)
 
     def to_dict(self) -> Dict[str, Any]:

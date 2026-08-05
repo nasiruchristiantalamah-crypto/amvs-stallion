@@ -38,7 +38,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from engine.assumptions import CommissionSchedule, LapseSchedule, ProductAssumptions
+from engine.assumptions import CommissionSchedule, FixedScaleCommission, LapseSchedule, ProductAssumptions
 
 
 def _utcnow_iso() -> str:
@@ -106,7 +106,14 @@ class AssumptionSet:
 
     mortality:        MortalityAssumptions       = field(default_factory=MortalityAssumptions)
     lapses:           Dict[int, float]           = field(default_factory=dict)   # {policy_year: annual_rate}
-    commissions:      Dict[int, float]           = field(default_factory=dict)   # {policy_year: rate}
+    commissions:      Dict[int, float]           = field(default_factory=dict)   # {policy_year: rate} — used when commission_type == "percentage"
+    # "percentage" (the common case, uses `commissions` above) or
+    # "fixed_scale" (flat GHS per in-force policy per year, uses
+    # `fixed_commission_scale` below instead) — see
+    # engine.assumptions.FixedScaleCommission for why these are mutually
+    # exclusive rather than combined.
+    commission_type:          str               = "percentage"
+    fixed_commission_scale:   Dict[int, float]   = field(default_factory=dict)   # {policy_year: annual GHS amount} — used when commission_type == "fixed_scale"
     expenses:         ExpenseAssumptions          = field(default_factory=ExpenseAssumptions)
     economic:         EconomicAssumptions          = field(default_factory=EconomicAssumptions)
     risk_adjustment:  RiskAdjustmentAssumptions      = field(default_factory=RiskAdjustmentAssumptions)
@@ -162,6 +169,8 @@ class AssumptionSet:
             "mortality":       asdict(self.mortality),
             "lapses":          {str(k): v for k, v in self.lapses.items()},
             "commissions":     {str(k): v for k, v in self.commissions.items()},
+            "commission_type":        self.commission_type,
+            "fixed_commission_scale": {str(k): v for k, v in self.fixed_commission_scale.items()},
             "expenses":        asdict(self.expenses),
             "economic":        asdict(self.economic),
             "risk_adjustment": asdict(self.risk_adjustment),
@@ -179,6 +188,8 @@ class AssumptionSet:
             mortality       = MortalityAssumptions(**d.get("mortality", {})),
             lapses          = {int(k): float(v) for k, v in (d.get("lapses") or {}).items()},
             commissions     = {int(k): float(v) for k, v in (d.get("commissions") or {}).items()},
+            commission_type          = d.get("commission_type", "percentage"),
+            fixed_commission_scale   = {int(k): float(v) for k, v in (d.get("fixed_commission_scale") or {}).items()},
             expenses        = ExpenseAssumptions(**d.get("expenses", {})),
             economic        = EconomicAssumptions(**d.get("economic", {})),
             risk_adjustment = RiskAdjustmentAssumptions(**d.get("risk_adjustment", {})),
@@ -213,7 +224,9 @@ class AssumptionSet:
 
         if self.lapses:
             target.lapse_schedule = LapseSchedule(rates=dict(self.lapses))
-        if self.commissions:
+        if self.commission_type == "fixed_scale" and self.fixed_commission_scale:
+            target.commission = FixedScaleCommission(rates=dict(self.fixed_commission_scale))
+        elif self.commissions:
             target.commission = CommissionSchedule(rates=dict(self.commissions))
 
         target.policy_fee_monthly      = self.expenses.policy_fee
