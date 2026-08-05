@@ -13,7 +13,7 @@
 
   /* ── Layout ── */
   .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
-  .sidebar { background: #1F3864; color: rgba(255,255,255,0.85); padding: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
+  .sidebar { background: #613C82; color: rgba(255,255,255,0.85); padding: 0; position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; }
   .content-area { display: flex; flex-direction: column; min-height: 100vh; }
   .main { padding: 20px 24px; overflow: auto; flex: 1; }
 
@@ -49,13 +49,13 @@
   /* ── App header bar ── */
   .app-header { height: 52px; min-height: 52px; background: white; border-bottom: 1px solid #e3e5e9; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; position: sticky; top: 0; z-index: 6; }
   .breadcrumb { font-size: 13px; color: #6b7280; }
-  .breadcrumb strong { color: #1F3864; font-weight: 600; }
+  .breadcrumb strong { color: #613C82; font-weight: 600; }
   .breadcrumb-sep { color: #c7cbd1; margin: 0 7px; }
   .header-actions { display: flex; align-items: center; gap: 2px; }
   .header-icon-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; color: #6b7280; }
-  .header-icon-btn:hover { background: #f0f1f4; color: #1F3864; }
+  .header-icon-btn:hover { background: #f0f1f4; color: #613C82; }
   .avatar-wrap { position: relative; margin-left: 6px; }
-  .avatar-circle { width: 30px; height: 30px; border-radius: 50%; background: #1F3864; color: white; display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 700; cursor: pointer; letter-spacing: 0.3px; }
+  .avatar-circle { width: 30px; height: 30px; border-radius: 50%; background: #613C82; color: white; display: flex; align-items: center; justify-content: center; font-size: 11.5px; font-weight: 700; cursor: pointer; letter-spacing: 0.3px; }
   .avatar-dropdown { position: absolute; top: 40px; right: 0; background: white; border: 1px solid #e3e5e9; border-radius: 8px; box-shadow: 0 10px 28px rgba(15,23,42,0.14); width: 208px; display: none; z-index: 30; overflow: hidden; }
   .avatar-dropdown.open { display: block; }
   .avatar-dropdown-header { padding: 12px 14px; border-bottom: 1px solid #f0f0f0; }
@@ -67,10 +67,10 @@
   .avatar-dropdown-divider { border-top: 1px solid #f0f0f0; }
 
   /* ── Typography system ── */
-  .page-title { font-size: 20px; font-weight: 700; color: #1F3864; letter-spacing: -0.1px; }
+  .page-title { font-size: 20px; font-weight: 700; color: #613C82; letter-spacing: -0.1px; }
   .page-subtitle { font-size: 12.5px; color: #6b7280; margin-top: 4px; }
   .page-header-divider { border-bottom: 1px solid #e3e5e9; margin: 14px 0 18px; }
-  .section-title2 { font-size: 14px; font-weight: 700; color: #1F3864; }
+  .section-title2 { font-size: 14px; font-weight: 700; color: #613C82; }
   .label-text { font-size: 12px; font-weight: 500; color: #555b66; }
   .data-value-text { font-size: 13px; font-weight: 400; color: #1a1a1a; }
   .muted-text { font-size: 11px; color: #9aa0a8; }
@@ -83,7 +83,7 @@
   /* ── Top bar (legacy, still used inside a couple of pages) ── */
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
   .badge { background: #E7F0E9; color: #2C5233; font-size: 10.5px; padding: 3px 9px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
-  .badge-blue { background: #E1E7F3; color: #1F3864; font-size: 10.5px; padding: 3px 9px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
+  .badge-blue { background: #F1E9F6; color: #613C82; font-size: 10.5px; padding: 3px 9px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
   .badge-warning { background: #FBF2DC; color: #6B5313; border: 1px solid #8A6D1D; font-size: 10.5px; padding: 2px 8px; border-radius: 4px; font-weight: 600; letter-spacing: 0.2px; }
 
   /* ── Metric cards ── */
@@ -91,18 +91,18 @@
   .cards-3 { grid-template-columns: repeat(3, 1fr); }
   .card { background: white; border-radius: 6px; padding: 14px 16px; border: 1px solid #e3e5e9; }
   .card-label { font-size: 10.5px; color: #8a8f98; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; font-weight: 600; }
-  .card-value { font-size: 21px; font-weight: 700; color: #1F3864; }
+  .card-value { font-size: 21px; font-weight: 700; color: #613C82; }
   .card-sub { font-size: 11px; color: #aab0b8; margin-top: 4px; }
 
   /* ── Panels ── */
   .panel { background: white; border-radius: 6px; border: 1px solid #e3e5e9; padding: 16px 18px; margin-bottom: 14px; }
-  .panel-title { font-size: 13.5px; font-weight: 700; color: #1F3864; margin-bottom: 14px; padding-bottom: 9px; border-bottom: 1px solid #eef0f2; }
+  .panel-title { font-size: 13.5px; font-weight: 700; color: #613C82; margin-bottom: 14px; padding-bottom: 9px; border-bottom: 1px solid #eef0f2; }
 
   /* ── Forms ── */
   .form-group { display: flex; flex-direction: column; gap: 5px; }
   .form-group label { font-size: 12px; color: #555b66; font-weight: 500; }
   select, input[type="text"], input[type="number"], input[type="password"] { width: 100%; font-size: 13px; font-family: inherit; border: 1px solid #d7dae0; border-radius: 5px; padding: 7px 10px; color: #1a1a1a; background: white; }
-  select:focus, input:focus { outline: none; border-color: #2E5090; box-shadow: 0 0 0 3px rgba(46,80,144,0.12); }
+  select:focus, input:focus { outline: none; border-color: #7B4FA0; box-shadow: 0 0 0 3px rgba(123,79,160,0.12); }
 
   /* ── Login — split-screen showcase + form (Stallion Consultants brand) ── */
   #app-shell { display: none; }
@@ -114,7 +114,7 @@
   @keyframes loginFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
   /* Left panel — 60%: rotating photo slideshow + company showcase */
-  .login-showcase { position: relative; flex: 0 0 60%; overflow: hidden; background: #1F3864; }
+  .login-showcase { position: relative; flex: 0 0 60%; overflow: hidden; background: #613C82; }
   .login-slide {
     position: absolute; inset: 0; width: 100%; height: 100%;
     background-size: cover; background-position: center;
@@ -157,13 +157,13 @@
 
   /* Right panel — 40%: login form */
   .login-form-panel { position: relative; flex: 0 0 40%; display: flex; align-items: center; justify-content: center; background: #fff; padding: 40px; }
-  .login-panel-accent { position: absolute; top: 0; left: 0; right: 0; height: 5px; background: linear-gradient(90deg, #1F3864, #5b5967); }
+  .login-panel-accent { position: absolute; top: 0; left: 0; right: 0; height: 5px; background: linear-gradient(90deg, #613C82, #613C82); }
   .login-form-card { width: 100%; max-width: 360px; }
   .login-brand-mark { margin-bottom: 26px; }
-  .login-brand-name { font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 700; font-size: 46px; color: #5b5967; letter-spacing: 0.5px; line-height: 1; }
-  .login-brand-rule { height: 4px; width: 100%; background: #5b5967; border-radius: 2px; margin: 8px 0 7px; }
-  .login-brand-sub { font-family: Arial, Helvetica, sans-serif; font-weight: 800; font-size: 25px; color: #141414; letter-spacing: 1.5px; line-height: 1; }
-  .login-amvs-logo { font-size: 30px; font-weight: 700; color: #1F3864; letter-spacing: 0.5px; }
+  .login-brand-name { font-family: Arial, Helvetica, sans-serif; font-weight: 800; font-size: 44px; color: #613C82; letter-spacing: 0.5px; line-height: 1; }
+  .login-brand-rule { height: 4px; width: 100%; background: #613C82; border-radius: 2px; margin: 8px 0 7px; }
+  .login-wordmark-sub { font-family: Arial, Helvetica, sans-serif; font-weight: 800; font-size: 22px; color: #141414; letter-spacing: 1.5px; line-height: 1; }
+  .login-amvs-logo { font-size: 30px; font-weight: 700; color: #613C82; letter-spacing: 0.5px; }
   .login-amvs-sub { font-size: 13px; color: #444; margin-top: 6px; font-weight: 500; margin-bottom: 30px; }
   .login-amvs-org { font-size: 11.5px; color: #8a8f98; margin-top: 3px; margin-bottom: 30px; }
 
@@ -175,12 +175,12 @@
     width: 100%; padding: 10px 12px 10px 38px; border: 1px solid #d7dae0; border-radius: 6px;
     font-size: 13px; font-family: inherit; background: #fff; transition: border-color .12s, box-shadow .12s;
   }
-  .login-input-wrap input:focus { outline: none; border-color: #1F3864; box-shadow: 0 0 0 3px rgba(31,56,100,0.10); }
+  .login-input-wrap input:focus { outline: none; border-color: #613C82; box-shadow: 0 0 0 3px rgba(97,60,130,0.10); }
   .login-pw-toggle {
     position: absolute; right: 6px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer;
     color: #9aa0a8; padding: 6px; display: flex; align-items: center; justify-content: center; line-height: 0; z-index: 2;
   }
-  .login-pw-toggle:hover { color: #1F3864; }
+  .login-pw-toggle:hover { color: #613C82; }
   .login-pw-toggle svg { position: static; transform: none; }
 
   .login-remember-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
@@ -188,7 +188,7 @@
   .login-remember-label input { cursor: pointer; }
 
   .login-submit-btn {
-    width: 100%; padding: 12px; border-radius: 6px; border: none; background: #1F3864; color: #fff;
+    width: 100%; padding: 12px; border-radius: 6px; border: none; background: #613C82; color: #fff;
     font-size: 13.5px; font-weight: 700; font-family: inherit; cursor: pointer;
     display: flex; align-items: center; justify-content: center; gap: 8px;
     transition: background .15s, color .15s;
@@ -198,7 +198,7 @@
   .login-submit-btn.success { background: #2C5233; }
 
   .login-links-row { display: flex; justify-content: space-between; margin-top: 16px; font-size: 11.5px; }
-  .login-links-row a { color: #1F3864; text-decoration: none; font-weight: 600; }
+  .login-links-row a { color: #613C82; text-decoration: none; font-weight: 600; }
   .login-links-row a:hover { text-decoration: underline; color: #C9A84C; }
 
   .login-error {
@@ -208,7 +208,7 @@
 
   .login-trust-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
   .login-trust-badge { display: flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 600; color: #4a5058; background: #f4f6f8; border: 1px solid #e3e7ec; border-radius: 20px; padding: 5px 11px; }
-  .login-trust-badge svg { flex-shrink: 0; color: #1F3864; }
+  .login-trust-badge svg { flex-shrink: 0; color: #613C82; }
   .login-form-footer { margin-top: 14px; text-align: center; font-size: 10.5px; color: #9aa0a8; line-height: 1.8; }
 
   /* Mobile — showcase collapses, only the form shows */
@@ -221,8 +221,8 @@
   .btn { display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 5px; font-size: 12.5px; cursor: pointer; font-weight: 600; border: 1px solid #d7dae0; background: white; color: #333; transition: background .12s, border-color .12s; font-family: inherit; }
   .btn:hover { background: #f6f7f9; }
   .btn:disabled { opacity: 0.55; cursor: not-allowed; }
-  .btn-primary { background: #2E5090; border-color: #2E5090; color: white; }
-  .btn-primary:hover { background: #1F3864; }
+  .btn-primary { background: #7B4FA0; border-color: #7B4FA0; color: white; }
+  .btn-primary:hover { background: #613C82; }
   .btn-gold { background: #C9A84C; border-color: #C9A84C; color: white; }
   .btn-gold:hover { background: #B8973B; }
 
@@ -242,29 +242,29 @@
   .alert { padding: 9px 15px; border-radius: 5px; font-size: 12.5px; display: flex; align-items: center; gap: 9px; margin-bottom: 14px; display: none; }
   .alert-success { background: #E7F0E9; border: 1px solid #2C5233; color: #2C5233; }
   .alert-danger  { background: #FCE8E6; border: 1px solid #c62828; color: #c62828; }
-  .alert-info    { background: #E1E7F3; border: 1px solid #1F3864; color: #1F3864; }
+  .alert-info    { background: #F1E9F6; border: 1px solid #613C82; color: #613C82; }
   .alert-warning { background: #FBF2DC; border: 1px solid #8A6D1D; color: #6B5313; }
 
   /* ── Tabs ── */
   .tab-bar { display: flex; gap: 0; margin-bottom: 14px; border-bottom: 1px solid #e3e5e9; }
   .tab { padding: 8px 15px; font-size: 12.5px; cursor: pointer; color: #8a8f98; border-bottom: 2px solid transparent; margin-bottom: -1px; font-weight: 600; }
-  .tab:hover { color: #1F3864; }
-  .tab.active { color: #2E5090; border-bottom-color: #2E5090; }
+  .tab:hover { color: #613C82; }
+  .tab.active { color: #7B4FA0; border-bottom-color: #7B4FA0; }
   .tab-content { display: none; }
   .tab-content.active { display: block; }
 
   /* ── Table ── */
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  th { text-align: left; padding: 8px 12px; background: #1F3864; color: white; font-size: 11px; font-weight: 600; letter-spacing: 0.2px; }
+  th { text-align: left; padding: 8px 12px; background: #613C82; color: white; font-size: 11px; font-weight: 600; letter-spacing: 0.2px; }
   td { padding: 7px 12px; border-bottom: 1px solid #eef0f2; }
   tr:nth-child(even) td { background: #FAFAFB; }
   tr:hover td { background: #F1F3F7; }
-  .td-prem { color: #2E5090; font-weight: 600; }
+  .td-prem { color: #7B4FA0; font-weight: 600; }
 
   /* ── Spinner ── */
   .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; }
-  .spinner-dark { border-color: rgba(0,0,0,0.15); border-top-color: #2E5090; }
+  .spinner-dark { border-color: rgba(0,0,0,0.15); border-top-color: #7B4FA0; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── Two-col layout ── */
@@ -367,7 +367,7 @@
       <div class="login-brand-mark">
         <div class="login-brand-name">Stallion</div>
         <div class="login-brand-rule"></div>
-        <div class="login-brand-sub">CONSULTANTS</div>
+        <div class="login-wordmark-sub">CONSULTANTS LIMITED</div>
       </div>
       <div class="login-amvs-logo">AMVS</div>
       <div class="login-amvs-sub">Actuarial Modelling &amp; Valuation System</div>
@@ -1035,7 +1035,7 @@
           <div>
             <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Workbooks (.xlsx — pick all 4 at once, or add them one at a time)</label>
             <input type="file" id="upload-files-input" accept=".xlsx" multiple onchange="onUploadFilesSelected()">
-            <a href="#" onclick="clearUploadedFiles();return false" id="btn-clear-uploads" style="display:none;margin-left:10px;font-size:12px;color:#1F3864">Clear selection</a>
+            <a href="#" onclick="clearUploadedFiles();return false" id="btn-clear-uploads" style="display:none;margin-left:10px;font-size:12px;color:#613C82">Clear selection</a>
           </div>
           <div>
             <label style="display:block;font-size:12px;color:#888;margin-bottom:4px">Client name</label>
@@ -1451,7 +1451,7 @@
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:20px">
               <div>
                 <div class="label-text">GIRBC Capital Adequacy Ratio</div>
-                <div id="sv-car-big" style="font-size:38px;font-weight:700;color:#1F3864">—</div>
+                <div id="sv-car-big" style="font-size:38px;font-weight:700;color:#613C82">—</div>
                 <div class="muted-text">Legacy margin test (transition basis): <span id="sv-legacy-car">—</span></div>
               </div>
               <div style="text-align:right">
@@ -2070,7 +2070,7 @@ let ppDependantRowCount = 0;
 let ppLastResult = null;
 let ppShowAllCashflowYears = false;
 let ppReserveChart = null, ppProfitChart = null, ppRateTableChart = null, ppCashflowChart = null;
-const PP_CASHFLOW_CHART_COLORS = ['#2E5090', '#c33', '#2a7', '#e8a33d', '#7a4fb5', '#1f9ba8'];
+const PP_CASHFLOW_CHART_COLORS = ['#7B4FA0', '#c33', '#2a7', '#e8a33d', '#7a4fb5', '#1f9ba8'];
 
 function onProductTypeChanged() {
   const type = document.getElementById('pp-type').value;
@@ -2401,7 +2401,7 @@ function renderReserveTab(data) {
     type: 'line',
     data: {
       labels: rows.map(r => 'Yr ' + r.policy_year),
-      datasets: [{ label: 'Closing reserve (GHS)', data: rows.map(r => r.closing_reserve), borderColor: '#2E5090', backgroundColor: 'rgba(46,80,144,0.1)', fill: true, tension: 0.2 }],
+      datasets: [{ label: 'Closing reserve (GHS)', data: rows.map(r => r.closing_reserve), borderColor: '#7B4FA0', backgroundColor: 'rgba(123,79,160,0.1)', fill: true, tension: 0.2 }],
     },
     options: { responsive: true, plugins: { legend: { display: true } } },
   });
@@ -2838,7 +2838,7 @@ function reservingNoteRowHtml(clientId, cls, warning, note) {
   return `
     <div style="border:1px solid #E5E7EB;border-radius:6px;padding:12px 14px;margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <strong style="font-size:13px;color:#1F3864">${_escapeHtml(cls)}</strong>
+        <strong style="font-size:13px;color:#613C82">${_escapeHtml(cls)}</strong>
         ${warning ? '<span class="badge-warning">Manual review required</span>' : ''}
       </div>
       ${warning ? `<div style="font-size:12px;color:#6B5313;margin-bottom:8px">${_escapeHtml(warning)}</div>` : ''}
@@ -3679,7 +3679,7 @@ function renderSolvencyResults(data, payload) {
 
   // Tab 1: Capital Adequacy Summary
   document.getElementById('sv-car-big').textContent = pct(g.car);
-  document.getElementById('sv-car-big').style.color = g.status === 'BREACH' ? '#c33' : (g.status === 'STRONG' ? '#2a7' : '#1F3864');
+  document.getElementById('sv-car-big').style.color = g.status === 'BREACH' ? '#c33' : (g.status === 'STRONG' ? '#2a7' : '#613C82');
   document.getElementById('sv-legacy-car').textContent = legacy ? `${pct(legacy.legacy_car)} — ${legacy.status}` : 'not available for this client';
   const statusBadge = document.getElementById('sv-status-badge');
   statusBadge.textContent = g.status;
@@ -3781,7 +3781,7 @@ function renderSvScrPieChart(g) {
           g.market_risk.total_market_risk_scr, g.credit_risk.total_credit_risk_scr,
           g.operational_risk.total_operational_risk_scr,
         ],
-        backgroundColor: ['#1F3864', '#C9A84C', '#2E5090', '#8A6D1D', '#6b7280'],
+        backgroundColor: ['#613C82', '#C9A84C', '#7B4FA0', '#8A6D1D', '#6b7280'],
       }],
     },
     options: { plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } },
