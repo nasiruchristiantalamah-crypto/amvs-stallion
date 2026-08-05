@@ -208,9 +208,20 @@ def calculate_present_values(
     pvfcf = total_pv_outflows - total_pv_premiums
 
     # ── IFRS 17: Risk Adjustment (Building Block 2) ────────────────────────
-    # RA comes from assumptions (Cost of Capital method)
+    # Per-contract RA via a Cost of Capital proxy: coc_rate applied to THIS
+    # policy's own PV(benefits) — the actual insurance risk exposure being
+    # priced. NOT assumptions.risk_adjustment (coc_rate x company-wide
+    # solvency_capital, e.g. 6% x GHS 500,000 = GHS 30,000) — that figure
+    # is a portfolio-level capital requirement, not a per-policy one,
+    # and applying it unscaled here made every individual policy's RA
+    # dwarf its own PV premiums/benefits, forcing is_onerous=True on
+    # essentially every contract regardless of how it was actually priced.
+    # assumptions.risk_adjustment is still the right figure for the
+    # in-force-cohort roll-forward in engine/ifrs17.py, which is a
+    # portfolio-level context — only this single-contract calculation
+    # needed to stop using it.
     # IFRS 17 Para. 37, B91-B92
-    ra = assumptions.risk_adjustment
+    ra = assumptions.coc_rate * total_pv_benefits
 
     # ── IFRS 17: Onerous Contract Test (Para. 47) ─────────────────────────
     # If PVFCF + RA > 0 at inception: contract is onerous → recognise loss NOW
