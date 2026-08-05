@@ -649,6 +649,7 @@
         </div>
 
         <div id="pp-unsupported-warning" style="display:none;background:#fdecea;color:#a33;padding:10px 14px;border-radius:6px;margin-top:12px;font-size:13px;line-height:1.5"></div>
+        <div id="pp-type-note" style="display:none;background:#F1E9F6;color:#5a3d75;padding:10px 14px;border-radius:6px;margin-top:12px;font-size:13px;line-height:1.5"></div>
 
         <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:14px" id="pp-structure-fields">
           <div class="form-group" style="width:170px">
@@ -2155,6 +2156,23 @@ function onProductTypeChanged() {
   // saying "Sum assured" regardless of what's actually being priced.
   const label = document.getElementById('pp-sum-assured-label');
   label.textContent = PP_SUM_ASSURED_LABELS[type] || 'Sum assured (GHS)';
+
+  // Endowment-family types automatically add the maturity payout that
+  // actually makes them endowments (not just Level Term under a different
+  // name) — explain the resulting premium jump instead of leaving it
+  // unexplained.
+  const typeNoteEl = document.getElementById('pp-type-note');
+  if (type === 'endowment' || type === 'educational_endowment') {
+    typeNoteEl.style.display = 'block';
+    typeNoteEl.innerHTML = 'Automatically pays the Sum Assured on survival to the end of the policy term too, ' +
+      'not just on death — that\'s built in for this product type, so the premium is higher than Level Term.';
+  } else if (type === 'pure_endowment') {
+    typeNoteEl.style.display = 'block';
+    typeNoteEl.innerHTML = 'Pays <strong>only</strong> on survival to the end of the policy term — no death cover. ' +
+      'Sum Assured funds the maturity payout, not a death benefit.';
+  } else {
+    typeNoteEl.style.display = 'none';
+  }
 
   // Whole Life is the only product_type with no term at all — every other
   // type needs a policy term, so force the checkbox off and enable the field.

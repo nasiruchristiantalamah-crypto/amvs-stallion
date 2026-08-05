@@ -165,3 +165,44 @@ def test_premium_payment_term_years_is_respected():
     pay_5 = price(5)
     # Fewer years to fund the same benefits -> each premium must be bigger.
     assert full_term < pay_10 < pay_5
+
+
+def _price_by_product_type(product_type):
+    req = CustomProductRequest(
+        product_name="Test", product_type=product_type, sum_assured=50000, entry_age=35,
+        policy_term_years=None if product_type == "whole_life" else 20,
+    )
+    product = _build_product_from_request(req)
+    return product, run_custom_pricing(product, _ghana_assumptions(35))
+
+
+def test_endowment_types_add_a_maturity_benefit_and_cost_more_than_level_term():
+    # Regression: selecting "Endowment" priced identically to "Level Term"
+    # because nothing actually added the maturity benefit that makes an
+    # endowment an endowment — the product_type label had no effect unless
+    # the user separately, manually added a Maturity rider themselves.
+    _, level_term = _price_by_product_type("level_term")
+    for endowment_type in ("endowment", "educational_endowment"):
+        product, result = _price_by_product_type(endowment_type)
+        assert product.maturity_benefits == {20: 50000.0}
+        # Guarantees a payout either way (death or survival) -> costs more.
+        assert result["monthly_premium"] > level_term["monthly_premium"]
+
+
+def test_pure_endowment_has_no_death_cover_only_maturity():
+    product, result = _price_by_product_type("pure_endowment")
+    assert product.riders == []   # no death rider at all
+    assert product.maturity_benefits == {20: 50000.0}
+    assert result["monthly_premium"] > 0
+
+
+def test_product_types_with_no_defined_structural_difference_price_identically():
+    # micro_life and group_life are classification labels, not distinct
+    # benefit structures, when given the same sum_assured/term/riders —
+    # unlike endowment/pure_endowment, there's no universal actuarial
+    # rule that would make these differ from level_term automatically.
+    _, level_term = _price_by_product_type("level_term")
+    _, micro_life = _price_by_product_type("micro_life")
+    _, group_life = _price_by_product_type("group_life")
+    assert micro_life["monthly_premium"] == level_term["monthly_premium"]
+    assert group_life["monthly_premium"] == level_term["monthly_premium"]

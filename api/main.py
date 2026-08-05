@@ -638,14 +638,22 @@ class CustomProductRequest(BaseModel):
 
 # Which rider type sum_assured represents, per product_type — every type not
 # listed here (annuities, non-life) never reaches _build_product_from_request
-# because _check_custom_product_type_supported rejects it first.
+# because _check_custom_product_type_supported rejects it first. pure_endowment
+# is handled separately below (survival-only — no death rider at all).
 PRIMARY_BENEFIT_TYPE_BY_PRODUCT_TYPE: Dict[str, str] = {
     "whole_life": "death", "level_term": "death", "decreasing_term": "death",
-    "endowment": "death", "educational_endowment": "death", "pure_endowment": "death",
+    "endowment": "death", "educational_endowment": "death",
     "micro_life": "death", "group_life": "death",
     "hospital_cash": "hospital_cash", "medical_expense": "lump_sum_hospital",
     "critical_illness": "critical_illness", "income_protection": "income_protection",
 }
+
+# Endowment-family products pay the sum assured on survival to the end of
+# the term TOO, not just on death — that's what actually makes an
+# endowment an endowment rather than level term. Selecting "Endowment" in
+# the dropdown didn't used to add this: it produced identical pricing to
+# Level Term unless the user separately, manually added a Maturity rider.
+ENDOWMENT_PRODUCT_TYPES = {"endowment", "educational_endowment"}
 
 
 def _resolve_custom_assumptions(request: "CustomProductRequest") -> ProductAssumptions:
@@ -669,12 +677,30 @@ def _build_product_from_request(request: "CustomProductRequest"):
     """
     spec = request.model_dump()
     riders = []
+    user_has_maturity_rider = any(r.benefit_type == "maturity" for r in request.riders)
+
     if request.sum_assured > 0:
-        primary_type = PRIMARY_BENEFIT_TYPE_BY_PRODUCT_TYPE.get(request.product_type, "death")
-        riders.append({
-            "name": "Main Benefit", "benefit_type": primary_type, "benefit_amount": request.sum_assured,
-            "rider_term_years": None, "waiting_period_months": 0,
-        })
+        if request.product_type == "pure_endowment":
+            # Pays ONLY on survival to the end of term — no death cover at
+            # all, unlike every other type here (the defining difference
+            # between a pure endowment and an ordinary endowment).
+            if request.policy_term_years:
+                riders.append({
+                    "name": "Maturity Value", "benefit_type": "maturity", "benefit_amount": request.sum_assured,
+                    "rider_term_years": request.policy_term_years, "waiting_period_months": 0,
+                })
+        else:
+            primary_type = PRIMARY_BENEFIT_TYPE_BY_PRODUCT_TYPE.get(request.product_type, "death")
+            riders.append({
+                "name": "Main Benefit", "benefit_type": primary_type, "benefit_amount": request.sum_assured,
+                "rider_term_years": None, "waiting_period_months": 0,
+            })
+            if request.product_type in ENDOWMENT_PRODUCT_TYPES and request.policy_term_years and not user_has_maturity_rider:
+                riders.append({
+                    "name": "Maturity Value", "benefit_type": "maturity", "benefit_amount": request.sum_assured,
+                    "rider_term_years": request.policy_term_years, "waiting_period_months": 0,
+                })
+
     riders += [r.model_dump() for r in request.riders]
     spec["riders"] = riders
     return build_custom_product(spec)
