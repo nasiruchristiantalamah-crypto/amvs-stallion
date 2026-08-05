@@ -48,6 +48,7 @@ from engine.custom_pricing import (
 )
 from outputs.custom_pricing_excel_exporter import export_custom_pricing_to_excel, GENERATED_DIR as CUSTOM_PRICING_EXCEL_DIR
 from outputs.custom_pricing_word_exporter import generate_custom_pricing_avr_note, GENERATED_DIR as CUSTOM_PRICING_WORD_DIR
+from outputs.custom_pricing_memo_exporter import generate_actuarial_memorandum, GENERATED_DIR as CUSTOM_PRICING_MEMO_DIR
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
 from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
@@ -611,8 +612,9 @@ class CustomRiderRequest(BaseModel):
     benefit_amount:          float           = Field(..., ge=0)
     rider_term_years:        Optional[int]   = Field(None, ge=1, le=100, description="Defaults to the product's own policy term if omitted")
     waiting_period_months:   int             = Field(0, ge=0)
-    annual_incidence_rate:   Optional[float] = Field(None, ge=0, le=1, description="Overrides the engine's default incidence rate for non-mortality-driven riders (tpd, critical_illness, hospital_cash, ...). Ignored for death/funeral (mortality-driven) and maturity/savings.")
+    annual_incidence_rate:   Optional[float] = Field(None, ge=0, le=1, description="Overrides the engine's default incidence rate for non-mortality-driven riders (tpd, critical_illness, hospital_cash, ...). Ignored for death/funeral (mortality-driven) and maturity/savings. Ignored if mortality_multiplier is set.")
     avg_events_per_year:     Optional[float] = Field(None, ge=0, description="Overrides the engine's default average events per year (e.g. nights per hospital admission). Ignored for death/funeral/maturity/savings.")
+    mortality_multiplier:    Optional[float] = Field(None, ge=0, description="If set, this rider's frequency is this fixed multiple of the mortality rate at each age (e.g. 0.20 = TPD priced as 20% of the mortality rate) instead of a flat annual_incidence_rate — takes priority over annual_incidence_rate when both are set. Ignored for death/funeral/maturity/savings.")
 
 class CustomDependantRequest(BaseModel):
     relationship:       str                    = Field(..., description="spouse, parent, child, or sibling")
@@ -784,6 +786,57 @@ def download_custom_pricing_word(filename: str):
     if safe_name != filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     path = os.path.join(CUSTOM_PRICING_WORD_DIR, safe_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
+    return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=safe_name)
+
+
+class ActuarialMemoNarrative(BaseModel):
+    policy_overview:              str = Field("", description="Free text — falls back to an auto-composed paragraph from the product spec if left blank")
+    proceeds_and_settlement:      str = Field("")
+    premium_notes:                str = Field("")
+    underwriting_notes:           str = Field("")
+    lapsation_and_reinstatement:  str = Field("")
+    closing_notes:                str = Field("")
+
+
+class ActuarialMemoRequest(CustomProductRequest):
+    narrative:          ActuarialMemoNarrative = Field(default_factory=ActuarialMemoNarrative)
+    appointed_actuary:  str = Field("Charles Osei-Akoto, ASA, MAAA")
+    consulting_firm:    str = Field("Stallion Consultants Ltd")
+    age_start:          int = Field(18, ge=0, le=100)
+    age_end:            int = Field(70, ge=0, le=100)
+
+
+@protected.post("/pricing/custom/export-memo")
+def pricing_custom_export_memo_endpoint(request: ActuarialMemoRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_custom_product_type_supported(request.product_type)
+    try:
+        product = _build_product_from_request(request)
+        assumptions = _resolve_custom_assumptions(request)
+        result = run_custom_pricing(product, assumptions, target_margin=request.target_margin, verbose=False)
+        rate_table = run_custom_rate_table(product, assumptions, request.age_start, request.age_end, request.target_margin)
+        docx_path = generate_actuarial_memorandum(
+            result, rate_table, request.model_dump(), request.narrative.model_dump(),
+            appointed_actuary=request.appointed_actuary, consulting_firm=request.consulting_firm,
+            product=product, assumptions=assumptions,
+        )
+        filename = os.path.basename(docx_path)
+        response = {"memo_download_url": f"/pricing/custom/export-memo/download/{filename}"}
+        _log_valuation_run(db, current_user, "pricing_custom_export_memo", request.model_dump(), response, client_id=None)
+        return {"success": True, "data": response}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/pricing/custom/export-memo/download/{filename}")
+def download_custom_pricing_memo(filename: str):
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(CUSTOM_PRICING_MEMO_DIR, safe_name)
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
     return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=safe_name)

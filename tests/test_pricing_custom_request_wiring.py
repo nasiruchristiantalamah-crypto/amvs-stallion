@@ -113,3 +113,32 @@ def test_rider_level_incidence_rate_override():
     hosp_override = next(r for r in _build_product_from_request(req_override).riders if r.name == "Hosp")
     assert hosp_default.annual_incidence_rate == pytest.approx(0.0025)   # engine default, unchanged
     assert hosp_override.annual_incidence_rate == pytest.approx(0.0002)  # caller override applied
+
+
+def test_mortality_multiple_rider_is_wired_through():
+    req = CustomProductRequest(
+        product_name="Test", product_type="whole_life", sum_assured=50000, entry_age=45,
+        riders=[{"name": "TPD", "benefit_type": "tpd", "benefit_amount": 25000,
+                 "waiting_period_months": 0, "mortality_multiplier": 0.20}],
+    )
+    tpd = next(r for r in _build_product_from_request(req).riders if r.name == "TPD")
+    assert tpd.incidence_basis == "mortality_multiple"
+    assert tpd.mortality_multiplier == pytest.approx(0.20)
+
+
+def test_mortality_multiple_rider_cost_scales_with_age_like_death_benefit():
+    # A rider priced as "X% of mortality" must scale with age the same way
+    # the death benefit does — unlike a flat annual_incidence_rate, which
+    # would hold the exact same cost at every age.
+    def tpd_premium(age):
+        req = CustomProductRequest(
+            product_name="Test", product_type="whole_life", sum_assured=1, entry_age=age,
+            riders=[{"name": "TPD", "benefit_type": "tpd", "benefit_amount": 25000,
+                     "waiting_period_months": 0, "mortality_multiplier": 0.20}],
+        )
+        product = _build_product_from_request(req)
+        return run_custom_pricing(product, _ghana_assumptions(age))["monthly_premium"]
+
+    premiums = [tpd_premium(a) for a in (35, 45, 55, 65)]
+    assert premiums == sorted(premiums)
+    assert len(set(premiums)) == len(premiums)   # strictly increasing, no two equal

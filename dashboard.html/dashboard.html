@@ -712,6 +712,7 @@
           <div class="tab pp-tab" data-tab="profit" onclick="showPricingTab('profit',this)">Profit Signature</div>
           <div class="tab pp-tab" data-tab="ratetable" onclick="showPricingTab('ratetable',this)">Rate Table</div>
           <div class="tab pp-tab" data-tab="sensitivity" onclick="showPricingTab('sensitivity',this)">Sensitivity</div>
+          <div class="tab pp-tab" data-tab="memo" onclick="showPricingTab('memo',this)">Actuarial Memorandum</div>
         </div>
 
         <!-- TAB 1: Premium summary -->
@@ -800,6 +801,50 @@
               <tbody id="pp-sensitivity-body"></tbody>
             </table>
           </div>
+        </div>
+
+        <!-- TAB 7: Actuarial Memorandum -->
+        <div class="tab-content pp-tab-content" id="pp-tab-memo">
+          <div style="font-size:12.5px;color:#888;margin-bottom:14px">Combines the narrative below with the actual computed pricing results (assumptions, appendix rate table, illustrative example) into a full downloadable Word memorandum. Leave any narrative field blank and a plain fallback paragraph is used instead.</div>
+
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Policy Overview</label>
+            <textarea id="memo-policy-overview" rows="3" style="width:100%;font-family:inherit;font-size:13px;padding:8px" placeholder="Describe the product, who it covers, and what it's for. Leave blank to auto-generate from the product definition above."></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Policy Proceeds, Surrender &amp; Settlement</label>
+            <textarea id="memo-proceeds" rows="3" style="width:100%;font-family:inherit;font-size:13px;padding:8px" placeholder="Describe how proceeds are calculated, surrender terms, and settlement options."></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Premium Notes</label>
+            <textarea id="memo-premium-notes" rows="2" style="width:100%;font-family:inherit;font-size:13px;padding:8px" placeholder="Describe contribution/payment structure, collection methods, etc."></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Underwriting Conditions</label>
+            <textarea id="memo-underwriting" rows="3" style="width:100%;font-family:inherit;font-size:13px;padding:8px" placeholder="Issue ages, terminal ages, eligibility, medical requirements, etc."></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Lapsation &amp; Reinstatement</label>
+            <textarea id="memo-lapsation" rows="3" style="width:100%;font-family:inherit;font-size:13px;padding:8px" placeholder="Grace period, lapse conditions, reinstatement terms."></textarea>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Closing Notes</label>
+            <textarea id="memo-closing" rows="2" style="width:100%;font-family:inherit;font-size:13px;padding:8px" placeholder="Any additional commentary for the memorandum."></textarea>
+          </div>
+
+          <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px">
+            <div class="form-group" style="min-width:220px;flex:1">
+              <label>Appointed actuary</label>
+              <input type="text" id="memo-actuary" value="Charles Osei-Akoto, ASA, MAAA">
+            </div>
+            <div class="form-group" style="min-width:220px;flex:1">
+              <label>Consulting firm</label>
+              <input type="text" id="memo-firm" value="Stallion Consultants Ltd">
+            </div>
+          </div>
+
+          <button class="btn btn-primary" onclick="generateActuarialMemo()" id="pp-btn-memo">Generate Memorandum (Word)</button>
+          <span id="pp-memo-status" style="font-size:13px;margin-left:10px"></span>
         </div>
 
         <div style="margin-top:20px;display:flex;gap:10px">
@@ -2128,7 +2173,12 @@ function _riderRowHtml(rowId) {
     <td><input type="number" class="pp-rider-amount" value="5000" min="0" style="width:110px"></td>
     <td><input type="number" class="pp-rider-term" placeholder="= policy term" min="1" style="width:110px"></td>
     <td><input type="number" class="pp-rider-waiting" value="0" min="0" style="width:90px"></td>
-    <td><input type="number" class="pp-rider-incidence" placeholder="engine default" min="0" max="100" step="0.01" style="width:110px"></td>
+    <td>
+      <input type="number" class="pp-rider-incidence" placeholder="engine default" min="0" max="100" step="0.01" style="width:90px">
+      <label style="display:block;font-size:10px;color:#888;margin-top:2px;white-space:nowrap;font-weight:normal">
+        <input type="checkbox" class="pp-rider-incidence-mortality" style="vertical-align:middle"> % of mortality
+      </label>
+    </td>
     <td><button class="btn" onclick="removeRiderRow(${rowId})" title="Remove this rider">×</button></td>
   </tr>`;
 }
@@ -2164,6 +2214,7 @@ function collectRiders() {
     const termVal = row.querySelector('.pp-rider-term').value;
     const type = row.querySelector('.pp-rider-type').value;
     const incidenceVal = row.querySelector('.pp-rider-incidence').value;
+    const asMortalityMultiple = row.querySelector('.pp-rider-incidence-mortality').checked;
     const rider = {
       name,
       benefit_type: type,
@@ -2172,7 +2223,14 @@ function collectRiders() {
       waiting_period_months: parseInt(row.querySelector('.pp-rider-waiting').value) || 0,
     };
     if (incidenceVal && !PP_NO_INCIDENCE_TYPES.has(type)) {
-      rider.annual_incidence_rate = parseFloat(incidenceVal) / 100;
+      // "% of mortality" means this rider's frequency scales with age like
+      // the death benefit (e.g. TPD = 20% of the mortality rate) — a fixed
+      // annual_incidence_rate instead would hold the SAME rate at every age.
+      if (asMortalityMultiple) {
+        rider.mortality_multiplier = parseFloat(incidenceVal) / 100;
+      } else {
+        rider.annual_incidence_rate = parseFloat(incidenceVal) / 100;
+      }
     }
     riders.push(rider);
   });
@@ -2540,6 +2598,47 @@ async function generateCustomAVRNote() {
     await downloadFile(d.data.word_download_url, filename);
   } catch (e) {
     alert('Download failed: ' + e.message);
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+function collectActuarialMemoNarrative() {
+  return {
+    policy_overview:             document.getElementById('memo-policy-overview').value,
+    proceeds_and_settlement:     document.getElementById('memo-proceeds').value,
+    premium_notes:                document.getElementById('memo-premium-notes').value,
+    underwriting_notes:          document.getElementById('memo-underwriting').value,
+    lapsation_and_reinstatement: document.getElementById('memo-lapsation').value,
+    closing_notes:                document.getElementById('memo-closing').value,
+  };
+}
+
+async function generateActuarialMemo() {
+  const btn = document.getElementById('pp-btn-memo');
+  const statusEl = document.getElementById('pp-memo-status');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Generating...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const body = {
+      ...collectCustomProductRequest(),
+      narrative: collectActuarialMemoNarrative(),
+      appointed_actuary: document.getElementById('memo-actuary').value || 'Charles Osei-Akoto, ASA, MAAA',
+      consulting_firm: document.getElementById('memo-firm').value || 'Stallion Consultants Ltd',
+      age_start: 18, age_end: 70,
+    };
+    const r = await apiFetch('/pricing/custom/export-memo', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.memo_download_url.split('/').pop();
+    await downloadFile(d.data.memo_download_url, filename);
+    statusEl.innerHTML = '<span style="color:#2a7">Memorandum generated</span>';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
   }
   btn.innerHTML = original;
   btn.disabled = false;

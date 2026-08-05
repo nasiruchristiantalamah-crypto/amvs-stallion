@@ -142,6 +142,24 @@ def calculate_cash_flows(
                         continue
                     amount += dep_dec.dx * dep_benefit * benefit_mult
                     expected_events += dep_dec.dx
+            elif rider.incidence_basis == "mortality_multiple":
+                # Frequency = a fixed multiple of the SAME dx used for the
+                # death benefit — e.g. TPD priced as "20% of the mortality
+                # rate," so it scales with age exactly like death does,
+                # unlike a flat annual_incidence_rate held constant across
+                # every age.
+                mult = rider.mortality_multiplier or 0.0
+                amount = dec.main.dx * mult * rider.benefit_main * benefit_mult
+                expected_events += dec.main.dx * mult
+                for i, dependant in enumerate(product.dependants):
+                    dep_dec = dec.dependants.get(i)
+                    if dep_dec is None:
+                        continue
+                    dep_benefit = dependant.get_dependant_benefit(rider.name, rider.benefit_dependant)
+                    if dep_benefit == 0:
+                        continue
+                    amount += dep_dec.dx * mult * dep_benefit * benefit_mult
+                    expected_events += dep_dec.dx * mult
             else:
                 monthly_incidence = rider.annual_incidence_rate / 12
                 amount = lx * monthly_incidence * rider.benefit_main * benefit_mult * rider.avg_events_per_year

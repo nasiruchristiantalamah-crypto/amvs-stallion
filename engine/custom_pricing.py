@@ -102,6 +102,7 @@ def build_custom_product(spec: Dict[str, Any]) -> Product:
                 maturity_benefits[int(year)] = maturity_benefits.get(int(year), 0.0) + float(r["benefit_amount"])
             continue
 
+        mortality_multiplier = None
         if benefit_type in MORTALITY_DRIVEN_TYPES:
             incidence_basis = "mortality"
             annual_incidence_rate = 0.0
@@ -115,6 +116,16 @@ def build_custom_product(spec: Dict[str, Any]) -> Product:
             incidence_basis = "savings_placeholder"
             annual_incidence_rate = 0.0
             avg_events_per_year = 0.0
+        elif r.get("mortality_multiplier") is not None:
+            # This rider's frequency is a fixed multiple of the mortality
+            # rate at each age (e.g. "TPD = 20% of the mortality rate") —
+            # takes priority over annual_incidence_rate when both are set,
+            # since it's a strictly more specific instruction. Scales with
+            # age exactly like the death benefit, unlike a flat rate.
+            incidence_basis = "mortality_multiple"
+            mortality_multiplier = float(r["mortality_multiplier"])
+            annual_incidence_rate = 0.0
+            avg_events_per_year = 1.0
         else:
             defaults = DEFAULT_MORBIDITY_RATES.get(benefit_type, {"annual_incidence_rate": 0.0010, "avg_events_per_year": 1.0})
             incidence_basis = benefit_type
@@ -147,6 +158,7 @@ def build_custom_product(spec: Dict[str, Any]) -> Product:
             incidence_basis          = incidence_basis,
             annual_incidence_rate    = annual_incidence_rate,
             avg_events_per_year      = avg_events_per_year,
+            mortality_multiplier     = mortality_multiplier,
             waiting_period_months    = int(r.get("waiting_period_months", 0)),
             max_duration_months      = int(rider_term_years) * 12 if rider_term_years else None,
             benefit_schedule          = benefit_schedule,

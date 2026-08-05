@@ -54,7 +54,11 @@ class Rider:
     incidence_basis:
         "mortality" — this rider pays out on death, driven by the
             decrement table's dx (main life and/or dependants).
-        anything else — treated as an annual incidence rate applied to
+        "mortality_multiple" — this rider's frequency is a fixed multiple
+            of that SAME dx (mortality_multiplier), e.g. TPD priced as
+            "20% of the mortality rate at each age" — scales with age
+            exactly like the death benefit, unlike a flat incidence rate.
+        anything else — treated as a flat annual incidence rate applied to
             in-force lives, exactly like the old hardcoded TPD/hospital
             logic, but now generic to any non-mortality rider.
     """
@@ -64,8 +68,14 @@ class Rider:
     benefit_dependant:      float = 0.0    # Default benefit amount per dependant
 
     incidence_basis:        str   = "mortality"
-    annual_incidence_rate:  float = 0.0    # Used when incidence_basis != "mortality"
+    annual_incidence_rate:  float = 0.0    # Used when incidence_basis is a flat rate (not "mortality" or "mortality_multiple")
     avg_events_per_year:    float = 1.0    # e.g. hospitalization's "average days" multiplier
+
+    # Used when incidence_basis == "mortality_multiple" — this rider's
+    # frequency is a fixed multiple of the SAME age's mortality dx (e.g.
+    # TPD priced as "20% of the mortality rate at each age", a standard
+    # actuarial technique — see engine/cashflows.py). None elsewhere.
+    mortality_multiplier:   Optional[float] = None
 
     waiting_period_months:  int = 0
     max_duration_months:    Optional[int] = None   # None = runs for the full policy term
@@ -107,7 +117,7 @@ class Rider:
             rider_type=self.rider_type, name=self.name,
             benefit_main=self.benefit_main, benefit_dependant=self.benefit_dependant,
             incidence_basis=self.incidence_basis, annual_incidence_rate=self.annual_incidence_rate,
-            avg_events_per_year=self.avg_events_per_year,
+            avg_events_per_year=self.avg_events_per_year, mortality_multiplier=self.mortality_multiplier,
             waiting_period_months=self.waiting_period_months, max_duration_months=self.max_duration_months,
             benefit_schedule=({str(k): v for k, v in self.benefit_schedule.items()} if self.benefit_schedule else None),
             reinsurance=self.reinsurance.to_dict(),
