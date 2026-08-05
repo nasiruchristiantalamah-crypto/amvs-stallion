@@ -1261,17 +1261,11 @@
 
         <div class="panel">
           <div class="panel-title">Risk adjustment</div>
-          <div class="result-row">
-            <span class="result-label">Method</span>
-            <select id="am-ra-method" style="width:180px" disabled title="Only Cost of Capital is currently implemented — Confidence Interval is stored but has no effect on results.">
-              <option value="cost_of_capital">Cost of Capital</option>
-              <option value="confidence_level">Confidence Interval</option>
-            </select>
-          </div>
-          <div style="font-size:10.5px;color:#aaa;margin:-8px 0 8px;text-align:right">Only method currently supported</div>
+          <div style="font-size:12px;color:#888;margin-bottom:10px">Per-policy Risk Adjustment on the Pricing page = CoC rate × PV(benefits). Method, Solvency capital, and Confidence level are removed here — none of them affect Pricing page results; Solvency capital is used only by the separate IFRS 17 — Life reporting page's cohort-level roll-forward, not by a single product quote.</div>
           <div class="result-row"><span class="result-label">CoC rate (% p.a.)</span><input type="number" id="am-ra-coc-rate" step="0.1" style="width:120px"></div>
-          <div class="result-row"><span class="result-label">Solvency capital (GHS)</span><input type="number" id="am-ra-solvency-capital" step="1000" style="width:120px"></div>
-          <div class="result-row"><span class="result-label">Confidence level (%)</span><input type="number" id="am-ra-confidence-level" step="1" style="width:120px" disabled title="Not used by the Cost of Capital method — the only method currently implemented."></div>
+          <input type="hidden" id="am-ra-method" value="cost_of_capital">
+          <input type="hidden" id="am-ra-solvency-capital" value="500000">
+          <input type="hidden" id="am-ra-confidence-level" value="75">
         </div>
 
         <div class="panel">

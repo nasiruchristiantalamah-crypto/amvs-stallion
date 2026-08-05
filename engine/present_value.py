@@ -167,7 +167,13 @@ def calculate_present_values(
         pv_inv      = cf.investment_income  * df
 
         # PV Profits this month = PV inflows - PV outflows
-        pv_prof = pv_prem - pv_ben - pv_exp - pv_comm
+        # Investment income earned on net cash flows is a genuine profit
+        # source for a pricing exercise (standard actuarial profit-testing)
+        # and must be credited here, or the premium alone is forced to
+        # carry the full target margin with no credit for what the insurer
+        # actually earns by holding the funds — see PVFCF below for why
+        # this stays OUT of the IFRS 17 building blocks specifically.
+        pv_prof = pv_prem + pv_inv - pv_ben - pv_exp - pv_comm
 
         # Monthly PV row
         monthly_rows.append(MonthlyPVRow(
@@ -189,7 +195,10 @@ def calculate_present_values(
 
     # ── Aggregate totals ───────────────────────────────────────────────────
     total_pv_outflows = total_pv_benefits + total_pv_expenses + total_pv_commissions
-    total_pv_profits  = total_pv_premiums - total_pv_outflows
+    # Investment income counts toward PRICING profit (see the monthly
+    # pv_prof comment above) but deliberately NOT toward pvfcf below —
+    # those two figures now diverge on purpose, not by oversight.
+    total_pv_profits  = total_pv_premiums + total_pv_inv_income - total_pv_outflows
 
     # ── Profit margin ──────────────────────────────────────────────────────
     # Profit margin = PV Profits / PV Premiums
@@ -204,6 +213,13 @@ def calculate_present_values(
     # PVFCF = PV(Future Outflows) - PV(Future Premiums)
     # A POSITIVE PVFCF means the insurer owes more than it will receive
     # = a NET LIABILITY (this is what goes on the balance sheet)
+    # Deliberately excludes investment income, unlike total_pv_profits
+    # above: IFRS 17's fulfilment cash flows measure the insurance
+    # contract liability itself — investment returns earned on the
+    # insurer's backing assets are a separate economic item accounted for
+    # under IFRS 9, not part of this liability. Folding investment income
+    # in here would misstate PVFCF/RA/CSM/LRC, even though it correctly
+    # belongs in the premium/profit-margin calculation above.
     # IFRS 17 Para. 32-33
     pvfcf = total_pv_outflows - total_pv_premiums
 

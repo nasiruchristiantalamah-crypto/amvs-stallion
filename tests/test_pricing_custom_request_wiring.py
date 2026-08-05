@@ -206,3 +206,57 @@ def test_product_types_with_no_defined_structural_difference_price_identically()
     _, group_life = _price_by_product_type("group_life")
     assert micro_life["monthly_premium"] == level_term["monthly_premium"]
     assert group_life["monthly_premium"] == level_term["monthly_premium"]
+
+
+def test_investment_return_lowers_the_required_premium():
+    # Regression: investment income was computed and shown in the Cash
+    # Flow tab's "Investment income" column, but never actually credited
+    # toward the profit margin the premium is solved against — sweeping
+    # investment_rate_pa +/-5 points moved the premium by exactly zero.
+    # A higher investment return means more profit comes from holding the
+    # funds, so LESS premium income is needed to hit the same target
+    # margin — the premium must now move, and in this direction.
+    from engine.assumptions import ProductAssumptions, LapseSchedule
+
+    def price(investment_rate_pa):
+        req = CustomProductRequest(product_name="Test", product_type="whole_life", sum_assured=50000, entry_age=35)
+        product = _build_product_from_request(req)
+        asmp = ProductAssumptions(
+            entry_age_main=35, lapse_schedule=LapseSchedule(rates={1: 0.25, 13: 0.02}),
+            investment_rate_pa=investment_rate_pa, target_profit_margin=0.15,
+        )
+        return run_custom_pricing(product, asmp)
+
+    low = price(0.02)
+    high = price(0.25)
+    assert high["monthly_premium"] < low["monthly_premium"]
+    # Both must still hit the exact target margin — investment income is a
+    # genuine input to the SAME equivalence-principle balance, not a fudge.
+    assert low["profit_margin"] == pytest.approx(0.15, abs=1e-6)
+    assert high["profit_margin"] == pytest.approx(0.15, abs=1e-6)
+
+
+def test_investment_return_does_not_change_ifrs17_building_blocks_formula():
+    # PVFCF/RA/CSM must stay a pure insurance-liability measure — folding
+    # investment income into them (instead of just the premium solve)
+    # would misstate the IFRS 17 balance sheet, a different and worse bug
+    # than the one being fixed here.
+    from engine.assumptions import ProductAssumptions, LapseSchedule
+    from engine.decrement import run_decrement_projection
+    from engine.cashflows import calculate_cash_flows
+    from engine.present_value import calculate_present_values
+
+    req = CustomProductRequest(product_name="Test", product_type="whole_life", sum_assured=50000, entry_age=35)
+    product = _build_product_from_request(req)
+    asmp = ProductAssumptions(entry_age_main=35, lapse_schedule=LapseSchedule(rates={1: 0.25, 13: 0.02}))
+
+    # Same premium, two different investment return assumptions — RA (which
+    # depends only on pv_benefits) must be identical; pvfcf must equal
+    # exactly pv_outflows - pv_premiums with no investment income term.
+    for inv_rate in (0.02, 0.30):
+        asmp.investment_rate_pa = inv_rate
+        dec_rows = run_decrement_projection(asmp, product)
+        cf_rows = calculate_cash_flows(dec_rows, asmp, product, 25.0)
+        _, pv = calculate_present_values(cf_rows, asmp)
+        assert pv.pvfcf == pytest.approx(pv.pv_total_outflows - pv.pv_premiums, abs=1e-6)
+        assert pv.risk_adjustment == pytest.approx(asmp.coc_rate * pv.pv_benefits, abs=1e-6)
