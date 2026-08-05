@@ -154,11 +154,11 @@ def generate_avr_data(
             "title":      "3. ACTUARIAL ASSUMPTIONS",
             "basis_date": period,
             "mortality": {
-                "table":     "Ghana National Mortality Table (GNM 2020 — approximated)",
-                "gender":    "Unisex (average of male and female rates)",
+                "table":     "SA Mortality Tables 1985/90 (Actuarial Society of South Africa)",
+                "gender":    "Unisex (table has no gender split)",
                 "loading":   "-20% (20% lighter than base table)",
                 "rationale": "Loading reflects expected better-than-standard mortality due to underwriting selection",
-                "source":    "Ghana Statistical Service / West African mortality experience",
+                "source":    "Same base table applied by GLICO Insurance (Ghana-licensed life insurer) in its own 2025 GMM actuarial valuation, in the absence of a robust indigenous Ghana table",
             },
             "morbidity": {
                 "tpd_rate":      "0.10% per annum",

@@ -49,9 +49,14 @@ def _utcnow_iso() -> str:
 
 @dataclass
 class MortalityAssumptions:
-    table:        str   = "GNM 2020"
+    # "SA 85/90" is the only table data/mortality.py actually implements
+    # (see that module's docstring) — this default must match it, not name
+    # a table ("GNM 2020") that was never found in any client data and was
+    # never wired in; get_annual_qx() always uses the same base table
+    # regardless of what this field says.
+    table:        str   = "SA 85/90"
     loading:      float = -0.20
-    gender_basis: str   = "unisex"   # "male", "female", "unisex"
+    gender_basis: str   = "unisex"   # "male", "female", "unisex" — accepted but has no effect; the table has no gender split (see data/mortality.py)
 
 
 @dataclass
@@ -122,7 +127,7 @@ class AssumptionSet:
             description="Standard Ghana market pricing/valuation assumptions",
             client_id=client_id,
             created_by=created_by,
-            mortality=MortalityAssumptions(table="GNM 2020", loading=-0.20, gender_basis="unisex"),
+            mortality=MortalityAssumptions(table="SA 85/90", loading=-0.20, gender_basis="unisex"),
             # Year 1 -> 25%, declining smoothly to year 13+ -> 2% (held from
             # year 13 onward — see LapseSchedule.get_annual_rate's step
             # function, which this dict is loaded into via to_product_assumptions()).

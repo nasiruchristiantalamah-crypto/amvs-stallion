@@ -28,7 +28,7 @@ from engine.runner import run_pricing
 
 def test_ghana_defaults_values():
     d = AssumptionSet.ghana_defaults()
-    assert d.mortality.table == "GNM 2020"
+    assert d.mortality.table == "SA 85/90"
     assert d.mortality.loading == pytest.approx(-0.20)
     assert d.mortality.gender_basis == "unisex"
     assert d.lapses[1] == pytest.approx(0.25)
@@ -68,7 +68,7 @@ def test_from_dict_handles_partial_payload():
     """A caller only overriding mortality loading shouldn't need to supply every other field."""
     custom = AssumptionSet.from_dict({"name": "Stress Test", "mortality": {"loading": 0.10}})
     assert custom.mortality.loading == pytest.approx(0.10)
-    assert custom.mortality.table == "GNM 2020"   # untouched default
+    assert custom.mortality.table == "SA 85/90"   # untouched default
     assert custom.economic.valuation_rate == pytest.approx(0.165)   # untouched default
 
 
