@@ -40,6 +40,7 @@ from outputs.solvency_word_exporter import (
     generate_girbc_certificate_from_results, GENERATED_DIR as SOLVENCY_WORD_GENERATED_DIR,
 )
 from engine.journals import generate_nonlife_journal
+from engine.general_ledger import build_general_ledger, trial_balance_is_zero
 from engine.clients import list_clients, load_client
 from engine.assumptions_manager import AssumptionSet
 from engine.assumptions import ProductAssumptions, LapseSchedule
@@ -1127,6 +1128,7 @@ def nonlife_statements_endpoint(request: NonLifeStatementsRequest, db: Session =
         statements = generate_nonlife_paa_statements(**kwargs)
         paid       = load_paid_claims(client_id=request.client_id)
         entries    = generate_nonlife_journal(statements, paid, period=request.period)
+        ledger     = build_general_ledger(entries)
 
         excel_path = export_nonlife_statements_to_excel(
             statements, entries,
@@ -1150,6 +1152,8 @@ def nonlife_statements_endpoint(request: NonLifeStatementsRequest, db: Session =
                 "journal_entry_count":      len(entries),
                 "journal_total_debit":      round(sum(e.debit for e in entries), 2),
                 "journal_total_credit":     round(sum(e.credit for e in entries), 2),
+                "general_ledger_account_count": len(ledger),
+                "trial_balance_is_zero":        trial_balance_is_zero(ledger),
                 "excel_download_url":       f"/nonlife/statements/download/{filename}",
         }
         _log_valuation_run(
@@ -1488,6 +1492,7 @@ async def upload_client_data(
         _save_uploaded_files(files, temp_dir)
         _check_required_uploads(temp_dir)
         statements, entries = _run_uploaded_reserving(temp_dir, valuation_date)
+        ledger = build_general_ledger(entries)
 
         by_class = {
             cls: {basis: _class_liability_to_dict(statements["by_class"][cls][basis]) for basis in ("gross", "net", "ri")}
@@ -1505,6 +1510,8 @@ async def upload_client_data(
             "journal_entries":      [_journal_entry_to_dict(e) for e in entries],
             "journal_total_debit":  round(sum(e.debit for e in entries), 2),
             "journal_total_credit": round(sum(e.credit for e in entries), 2),
+            "general_ledger_account_count": len(ledger),
+            "trial_balance_is_zero":        trial_balance_is_zero(ledger),
         }
         _log_valuation_run(
             db, current_user, "upload_client_data",

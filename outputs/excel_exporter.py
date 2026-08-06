@@ -20,7 +20,11 @@ Sheets produced:
                                 (Insurance Revenue, Service Expense, Finance
                                 Income, Reinsurance Expense/Recoveries)
     6. Journal entries         — the full double-entry journal listing
-    7. Assumptions               — RA loading, discount basis, data sources,
+    7. General ledger           — T-account roll-forward per primary
+                                   account (engine/general_ledger.py),
+                                   whole-portfolio then by class of
+                                   business, each checked to balance
+    8. Assumptions               — RA loading, discount basis, data sources,
                                    generation timestamp — the basis this run
                                    was produced on
 ================================================================================
@@ -392,6 +396,49 @@ def _build_journal_entries_sheet(wb, journal_entries: List[JournalEntry], period
     _write_table(ws, row, headers, rows, currency_cols={6, 7}, total_row_indices={len(rows) - 1})
 
 
+def _build_general_ledger_sheet(wb, journal_entries: List[JournalEntry], period: str):
+    """
+    T-account roll-forward per primary account (engine/general_ledger.py)
+    — the missing piece between "journal entries exist" (previous sheet)
+    and "a general ledger exists". Portfolio-wide totals first, then one
+    small table per class of business, each independently checked to
+    balance to zero (see engine.general_ledger.trial_balance_is_zero) —
+    not just the portfolio total, which could hide two classes' offsetting
+    errors.
+    """
+    from engine.general_ledger import build_general_ledger, general_ledger_by_class, trial_balance_is_zero
+
+    ws = wb.create_sheet("General ledger")
+    row = _write_title(ws, "General Ledger — T-Account Roll-Forward", period)
+
+    ledger_headers = ["Account code", "Account name", "Type", "Opening balance (GHS)", "Debits (GHS)", "Credits (GHS)", "Closing balance (GHS)", "Entries"]
+
+    portfolio_ledger = build_general_ledger(journal_entries)
+    row = _write_section(ws, "Whole portfolio", row)
+    ws.cell(row=row, column=1, value="Trial balance:").font = Font(bold=True)
+    ws.cell(row=row, column=2, value="Balanced" if trial_balance_is_zero(portfolio_ledger) else "NOT BALANCED — investigate")
+    if not trial_balance_is_zero(portfolio_ledger):
+        ws.cell(row=row, column=2).font = ONEROUS_FONT
+    row += 2
+
+    portfolio_rows = [
+        [code, acc.account_name, acc.account_type.title(), acc.opening_balance, acc.total_debits, acc.total_credits, acc.closing_balance, acc.entry_count]
+        for code, acc in sorted(portfolio_ledger.items())
+    ]
+    row = _write_table(ws, row, ledger_headers, portfolio_rows, currency_cols={4, 5, 6, 7})
+    row += 1
+
+    row = _write_section(ws, "By class of business", row)
+    for cls, cls_ledger in general_ledger_by_class(journal_entries).items():
+        ws.cell(row=row, column=1, value=cls).font = Font(bold=True, color=STALLION_NAVY)
+        row += 1
+        cls_rows = [
+            [code, acc.account_name, acc.account_type.title(), acc.opening_balance, acc.total_debits, acc.total_credits, acc.closing_balance, acc.entry_count]
+            for code, acc in sorted(cls_ledger.items())
+        ]
+        row = _write_table(ws, row, ledger_headers, cls_rows, currency_cols={4, 5, 6, 7})
+
+
 def _build_assumptions_sheet(wb, statements: dict, meta: dict):
     ws = wb.create_sheet("Assumptions")
     row = _write_title(ws, "Assumptions Used In This Run", statements["period"])
@@ -442,6 +489,7 @@ def export_nonlife_statements_to_excel(
     _build_balance_sheet_sheet(wb, statements)
     _build_income_statement_sheet(wb, journal_entries, statements)
     _build_journal_entries_sheet(wb, journal_entries, statements["period"])
+    _build_general_ledger_sheet(wb, journal_entries, statements["period"])
     _build_assumptions_sheet(wb, statements, meta)
 
     if output_path is None:

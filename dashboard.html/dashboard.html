@@ -3430,9 +3430,11 @@ async function runUploadReserving() {
     document.getElementById('panel-upload-results').style.display = 'block';
     renderDataQualityPanel(data.reserving_summary ? data.reserving_summary.data_quality_issues : null);
 
+    const tbOk = data.trial_balance_is_zero;
     statusEl.innerHTML = `<span style="color:#2a7">${data.classes.length} classes loaded — ` +
-      `${data.journal_entries.length} journal entries, debit/credit balanced at ` +
-      `${fmt(data.journal_total_debit)}</span>`;
+      `${data.journal_entries.length} journal entries across ${data.general_ledger_account_count} general ledger accounts, ` +
+      `debit/credit balanced at ${fmt(data.journal_total_debit)}</span>` +
+      (tbOk ? '' : ' <span style="color:#c33">— trial balance NOT balanced, investigate</span>');
     document.getElementById('upload-results-actions').style.display = 'block';
   } catch (e) {
     statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
@@ -4263,16 +4265,21 @@ async function runJournalEntries() {
     const d = await r.json();
     if (!d.success) throw new Error(d.detail);
     const data = d.data;
-    document.getElementById('je-info').textContent =
-      `${data.journal_entry_count} entries — debit ${fmt(data.journal_total_debit)} = credit ${fmt(data.journal_total_credit)}`;
+    const tbColor = data.trial_balance_is_zero ? '#2a7' : '#c33';
+    const tbLabel = data.trial_balance_is_zero ? 'Balanced' : 'NOT BALANCED';
+    document.getElementById('je-info').innerHTML =
+      `${data.journal_entry_count} entries — debit ${fmt(data.journal_total_debit)} = credit ${fmt(data.journal_total_credit)} — ` +
+      `general ledger: ${data.general_ledger_account_count} accounts, trial balance <strong style="color:${tbColor}">${tbLabel}</strong>`;
 
-    // The journal entries themselves live in the downloadable Excel workbook
-    // (see /nonlife/statements/download) — this page shows the debit/credit
-    // totals and points to the workbook's Journal Entries sheet for the
-    // full line-by-line ledger, rather than re-fetching every entry twice.
+    // The journal entries and full general ledger T-accounts live in the
+    // downloadable Excel workbook (see /nonlife/statements/download) — this
+    // page shows the debit/credit totals and trial balance check, and
+    // points to the workbook's Journal Entries / General Ledger sheets for
+    // the full line-by-line detail, rather than re-fetching every entry twice.
     document.getElementById('je-body').innerHTML =
       `<tr><td colspan="8" style="text-align:center;padding:16px" class="muted-text">
-        ${data.journal_entry_count} journal entries were generated — download the Excel workbook from the Reserving page to see every line (Journal Entries sheet).
+        ${data.journal_entry_count} journal entries across ${data.general_ledger_account_count} general ledger accounts were generated —
+        download the Excel workbook from the Reserving page to see every line (Journal Entries and General Ledger sheets).
       </td></tr>`;
     document.getElementById('je-panel').style.display = 'block';
   } catch (e) {
