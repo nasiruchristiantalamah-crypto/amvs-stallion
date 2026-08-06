@@ -54,7 +54,7 @@ from outputs.custom_pricing_memo_exporter import generate_actuarial_memorandum, 
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
 from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
-from db.models import User, ValuationRun, UserRole, AssumptionSet as AssumptionSetModel, ReservingNote, SolvencyRun
+from db.models import User, ValuationRun, UserRole, AssumptionSet as AssumptionSetModel, ReservingNote, SolvencyRun, RunSignOff
 from auth.dependencies import get_current_user, get_current_admin
 from auth.router import router as auth_router
 
@@ -330,6 +330,22 @@ def admin_list_audit_trail(
         .all()
     )
     user_emails = {u.id: u.email for u in db.query(User).all()}
+
+    run_ids = [r.id for r in runs]
+    signoffs_by_run: Dict[int, List[dict]] = {rid: [] for rid in run_ids}
+    if run_ids:
+        signoffs = (
+            db.query(RunSignOff)
+            .filter(RunSignOff.valuation_run_id.in_(run_ids))
+            .order_by(RunSignOff.created_at.asc())
+            .all()
+        )
+        for s in signoffs:
+            signoffs_by_run[s.valuation_run_id].append({
+                "id": s.id, "reviewer_email": user_emails.get(s.reviewer_id, f"user #{s.reviewer_id}"),
+                "note": s.note, "created_at": s.created_at.isoformat() if s.created_at else None,
+            })
+
     return {
         "success": True,
         "data": [
@@ -337,10 +353,55 @@ def admin_list_audit_trail(
                 "id": r.id, "user_email": user_emails.get(r.user_id, f"user #{r.user_id}"),
                 "client_id": r.client_id, "run_type": r.run_type,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
+                "signoffs": signoffs_by_run.get(r.id, []),
             }
             for r in runs
         ],
     }
+
+
+class RunSignOffRequest(BaseModel):
+    note: Optional[str] = Field(None, max_length=2000)
+
+@protected.post("/admin/audit-trail/{run_id}/signoff")
+def admin_signoff_run(
+    run_id: int, request: RunSignOffRequest,
+    db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin),
+):
+    run = db.query(ValuationRun).filter(ValuationRun.id == run_id).first()
+    if run is None:
+        raise HTTPException(status_code=404, detail=f"Valuation run #{run_id} not found")
+
+    signoff = RunSignOff(valuation_run_id=run_id, reviewer_id=current_admin.id, note=request.note)
+    db.add(signoff)
+    db.commit()
+    db.refresh(signoff)
+
+    return {
+        "success": True,
+        "data": {
+            "id": signoff.id, "reviewer_email": current_admin.email,
+            "note": signoff.note, "created_at": signoff.created_at.isoformat(),
+        },
+    }
+
+
+@protected.delete("/admin/audit-trail/signoff/{signoff_id}")
+def admin_delete_signoff(
+    signoff_id: int, db: Session = Depends(get_db), current_admin: User = Depends(get_current_admin),
+):
+    """
+    Retract a sign-off — e.g. it was recorded against the wrong run, or the
+    reviewer wants to withdraw it pending further review. Any admin can
+    retract any sign-off (this system doesn't distinguish which admin
+    reviews what), same access level as recording one.
+    """
+    signoff = db.query(RunSignOff).filter(RunSignOff.id == signoff_id).first()
+    if signoff is None:
+        raise HTTPException(status_code=404, detail=f"Sign-off #{signoff_id} not found")
+    db.delete(signoff)
+    db.commit()
+    return {"success": True, "data": {"deleted_id": signoff_id}}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -50,6 +50,15 @@ What this file does:
                         history.
         SolvencyRun    — audit log entry for one GIRBC + legacy solvency
                         run (engine/rbc/), mirroring ValuationRun's pattern.
+        RunSignOff     — a reviewing actuary's confirmation that a specific
+                        ValuationRun was checked, layered on top of it the
+                        same way ReservingNote layers on top of a computed
+                        IBNR figure: the original audit row is never
+                        mutated, sign-off is its own append-only trail.
+                        Multiple sign-offs per run are allowed (e.g.
+                        preparer + reviewer under a two-eyes principle) —
+                        this table answers "who reviewed this, and when",
+                        which ValuationRun alone only answers "who ran it".
 ================================================================================
 """
 
@@ -176,5 +185,26 @@ class SolvencyRun(Base):
     inputs_json     = Column(Text, nullable=False)
     results_json    = Column(Text, nullable=False)
     created_at      = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
+
+
+class RunSignOff(Base):
+    """
+    A reviewing actuary's confirmation that a specific ValuationRun was
+    checked — narrative-only, same as ReservingNote; never changes the
+    run's own inputs/outputs. Multiple sign-offs can exist for one run
+    (e.g. a preparer's own check plus a separate reviewer's, under a
+    two-eyes principle) — nothing here is a single mutable status field,
+    it's an append-only trail of who reviewed a run and when.
+    """
+    __tablename__ = "run_signoffs"
+
+    id                = Column(Integer, primary_key=True, index=True)
+    valuation_run_id  = Column(Integer, ForeignKey("valuation_runs.id"), nullable=False, index=True)
+    reviewer_id       = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    note              = Column(Text, nullable=True)
+    created_at        = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
+
+    valuation_run = relationship("ValuationRun")
+    reviewer      = relationship("User")
 
     user = relationship("User")
