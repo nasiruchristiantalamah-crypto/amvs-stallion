@@ -205,9 +205,9 @@ class ReservingRequest(BaseModel):
     class_of_business:          str                     = Field(..., description="e.g. Motor, Fire, Accident, Others")
     gross_triangle:             Dict[int, List[float]]  = Field(..., description="origin_year -> cumulative incurred by development age")
     net_triangle:                Dict[int, List[float]] = Field(..., description="same shape, net of reinsurance")
-    method:                       str                    = Field("chain_ladder", description="chain_ladder or bornhuetter_ferguson")
-    gross_premium:                Optional[Dict[int, float]] = Field(None, description="required if method=bornhuetter_ferguson")
-    net_premium:                   Optional[Dict[int, float]] = Field(None, description="required if method=bornhuetter_ferguson")
+    method:                       str                    = Field("chain_ladder", description="chain_ladder, bornhuetter_ferguson, or cape_cod")
+    gross_premium:                Optional[Dict[int, float]] = Field(None, description="required if method=bornhuetter_ferguson or cape_cod")
+    net_premium:                   Optional[Dict[int, float]] = Field(None, description="required if method=bornhuetter_ferguson or cape_cod")
     expected_loss_ratio_gross:      Optional[float]      = Field(None, ge=0, le=5)
     expected_loss_ratio_net:         Optional[float]      = Field(None, ge=0, le=5)
 

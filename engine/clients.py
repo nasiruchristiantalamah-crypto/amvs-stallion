@@ -99,7 +99,9 @@ class ClientConfig:
     # clients/qic/assumptions.yaml for why QIC's Motor and Fire classes use
     # this override (chain-ladder's undiscounted estimate was validated
     # against QIC's real 2025 AVR and found materially overstated/
-    # understated respectively).
+    # understated respectively). "cape_cod" is the same idea as BF but
+    # self-derives its expected loss ratio from the triangle instead of
+    # needing one supplied — see engine/cape_cod.py.
     reserving_methods:         Dict[str, str] = field(default_factory=dict)
     # Per-class warning surfaced verbatim in run_nic_summary()'s output and
     # the dashboard Reserving page — for a gap that reserving METHOD can't

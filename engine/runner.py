@@ -53,6 +53,7 @@ from engine.rollforward_store import load_prior_closing, save_closing_snapshot
 from engine.claims_triangle import ClaimsTriangle
 from engine.chain_ladder import run_chain_ladder
 from engine.bornhuetter_ferguson import estimate_expected_loss_ratio, run_blended_reserving
+from engine.cape_cod import run_cape_cod
 
 
 def _load_assumptions_and_product(
@@ -394,20 +395,28 @@ def run_reserving(
         gross_triangle      : origin_year -> cumulative incurred values by
                                 development age (see engine/claims_triangle.py)
         net_triangle         : same shape, net of reinsurance
-        method                : "chain_ladder" (default) or "bornhuetter_ferguson"
-                                 Chain Ladder is the validated default — for 3
-                                 of 4 classes tested against Provident
-                                 Insurance's own workpapers it matched their
-                                 selected IBNR closely or exactly. Only switch
-                                 to Bornhuetter-Ferguson for a class with both
-                                 a materially immature latest origin year and
-                                 a large, stable premium history (see
-                                 engine/bornhuetter_ferguson.py for why).
+        method                : "chain_ladder" (default), "bornhuetter_ferguson",
+                                 or "cape_cod". Chain Ladder is the validated
+                                 default — for 3 of 4 classes tested against
+                                 Provident Insurance's own workpapers it
+                                 matched their selected IBNR closely or
+                                 exactly. Switch to Bornhuetter-Ferguson for a
+                                 class with both a materially immature latest
+                                 origin year and a large, stable premium
+                                 history AND a trusted external a priori loss
+                                 ratio (see engine/bornhuetter_ferguson.py for
+                                 why). Switch to Cape Cod for the same
+                                 immature-year case when there's no trusted
+                                 external loss ratio to supply — it derives
+                                 its own from the triangle's own used-up
+                                 premium instead (see engine/cape_cod.py).
         gross_premium         : origin_year -> earned/written premium
-                                 (required if method="bornhuetter_ferguson")
-        net_premium            : same, net of reinsurance (required for BF)
+                                 (required for method="bornhuetter_ferguson"
+                                 or "cape_cod")
+        net_premium            : same, net of reinsurance (required for BF/Cape Cod)
         expected_loss_ratio_gross : a priori ELR for BF; estimated from the
-                                     triangle's own mature years if omitted
+                                     triangle's own mature years if omitted.
+                                     Not used for cape_cod (always self-derived).
         expected_loss_ratio_net    : same, net side
         verbose                     : Print progress
 
@@ -417,8 +426,8 @@ def run_reserving(
     """
     start = time.time()
 
-    if method not in ("chain_ladder", "bornhuetter_ferguson"):
-        raise ValueError(f"Unknown reserving method '{method}' — use 'chain_ladder' or 'bornhuetter_ferguson'")
+    if method not in ("chain_ladder", "bornhuetter_ferguson", "cape_cod"):
+        raise ValueError(f"Unknown reserving method '{method}' — use 'chain_ladder', 'bornhuetter_ferguson', or 'cape_cod'")
 
     if verbose:
         print(f"\n{'='*60}")
@@ -443,7 +452,7 @@ def run_reserving(
         elr_gross_used = None
         elr_net_used   = None
 
-    else:  # bornhuetter_ferguson
+    elif method == "bornhuetter_ferguson":
         if not gross_premium or not net_premium:
             raise ValueError("gross_premium and net_premium are required when method='bornhuetter_ferguson'")
 
@@ -459,6 +468,20 @@ def run_reserving(
         net_ibnr       = blended_net.total_blended_ibnr
         gross_ultimate = {oy: round(v, 2) for oy, v in blended_gross.blended_ultimate.items()}
         net_ultimate   = {oy: round(v, 2) for oy, v in blended_net.blended_ultimate.items()}
+
+    else:  # cape_cod
+        if not gross_premium or not net_premium:
+            raise ValueError("gross_premium and net_premium are required when method='cape_cod'")
+
+        cc_gross = run_cape_cod(gross_tri, gross_premium)
+        cc_net   = run_cape_cod(net_tri, net_premium)
+
+        gross_ibnr     = cc_gross.bf_result.total_bf_ibnr
+        net_ibnr       = cc_net.bf_result.total_bf_ibnr
+        gross_ultimate = {oy: round(v, 2) for oy, v in cc_gross.bf_result.bf_ultimate.items()}
+        net_ultimate   = {oy: round(v, 2) for oy, v in cc_net.bf_result.bf_ultimate.items()}
+        elr_gross_used = cc_gross.expected_loss_ratio
+        elr_net_used   = cc_net.expected_loss_ratio
 
     # ── Gross / Net / RI split ──────────────────────────────────────────────
     # RI (ceded) IBNR is what reinsurers carry — the gap between gross and net
