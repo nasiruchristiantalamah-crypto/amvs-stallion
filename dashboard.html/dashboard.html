@@ -979,7 +979,7 @@
       <div class="topbar">
         <div>
           <div class="page-title">Rate Tables</div>
-          <div class="page-subtitle">Generate a full premium rate table across ages 18–70 for a given product tier.</div>
+          <div class="page-subtitle">Premium rate table for whatever product is currently configured on the Product Pricing page — not a separate preset.</div>
         </div>
         <span class="badge">All ages 18–70</span>
       </div>
@@ -987,34 +987,20 @@
 
       <div class="panel" style="margin-bottom:16px">
         <div class="panel-title">Table settings</div>
+        <div style="font-size:12.5px;color:#888;margin-bottom:12px">Uses the exact product, riders, dependants, and assumptions currently set on <a href="#" onclick="navigateTo('pricing','Pricing','Product Pricing',document.querySelector('.nav-item'));return false">Product Pricing</a> — go there first to define or change what's being priced.</div>
         <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
-          <div class="form-group" style="flex:0 0 200px">
-            <label>Product tier</label>
-            <select id="rt-tier">
-              <option value="1">Tier 1 — Basic</option>
-              <option value="2">Tier 2 — Standard</option>
-              <option value="3">Tier 3 — Premium</option>
-            </select>
-          </div>
-          <div class="form-group" style="flex:0 0 220px">
-            <label>Product type</label>
-            <select id="rt-product">
-              <option value="whole_life">Ghana Whole Life (GMM)</option>
-              <option value="micro_life">Ghana Micro Life (PAA)</option>
-            </select>
-          </div>
           <div class="form-group" style="flex:0 0 100px">
             <label>From age</label>
-            <input type="number" id="rt-from" value="18" min="18" max="70">
+            <input type="number" id="rt-from" value="18" min="0" max="100">
           </div>
           <div class="form-group" style="flex:0 0 100px">
             <label>To age</label>
-            <input type="number" id="rt-to" value="70" min="18" max="70">
+            <input type="number" id="rt-to" value="70" min="0" max="100">
           </div>
           <button class="btn btn-gold" onclick="runRateTable()" id="btn-rt">Generate rate table</button>
         </div>
         <div style="margin-top:10px;font-size:12px;color:#888">
-          Note: Generating ages 18–70 takes about 30–60 seconds. The engine is solving for the premium at each age.
+          Note: Generating a full age range takes about 30–60 seconds. The engine is solving for the premium at each age.
         </div>
       </div>
 
@@ -1343,14 +1329,50 @@
     <!-- ── SENSITIVITY ANALYSIS PAGE (jumps to Pricing platform's Sensitivity tab) ── -->
     <div class="page" id="page-sensitivity">
       <div class="page-title">Sensitivity Analysis</div>
-      <div class="page-subtitle">Stress test any product's premium against one assumption at a time.</div>
+      <div class="page-subtitle">Comprehensive stress testing and investment fund projection for whatever product is currently configured on Product Pricing.</div>
       <div class="page-header-divider"></div>
-      <div class="panel">
-        <p class="data-value-text" style="line-height:1.7;margin-bottom:14px">
-          Sensitivity analysis runs against whatever product is currently defined on the Product Pricing page.
-          Define a product there, run pricing once, then open its Sensitivity tab — or jump straight there now.
-        </p>
-        <button class="btn btn-gold" onclick="navigateTo('pricing','Pricing','Product Pricing',document.querySelector('.nav-item'));setTimeout(()=>{const t=document.querySelector('[data-tab=\'sensitivity\']');if(t)t.click();},50)">Go to Product Pricing → Sensitivity</button>
+
+      <div class="panel" style="margin-bottom:16px">
+        <div style="font-size:12.5px;color:#888;margin-bottom:12px">Uses the exact product, riders, dependants, and assumptions currently set on <a href="#" onclick="navigateTo('pricing','Pricing','Product Pricing',document.querySelector('.nav-item'));return false">Product Pricing</a> — go there first to define or change what's being priced. This sweep is more comprehensive than the Pricing page's own Sensitivity tab: finer gradations (±5/10/20%), more assumption types, and the IFRS 17 impact (onerous flag, CSM) per stress, not just the premium.</div>
+        <button class="btn btn-gold" onclick="runStandaloneSensitivity()" id="sa-btn-run">Run Sensitivity Analysis</button>
+        <span id="sa-status" style="font-size:13px;margin-left:10px"></span>
+      </div>
+
+      <div class="panel" id="sa-results-panel" style="display:none;margin-bottom:16px">
+        <div class="panel-title">Sensitivity Results <span id="sa-basis" style="font-weight:normal;color:#888;font-size:12px"></span></div>
+        <canvas id="sa-tornado-chart" height="130"></canvas>
+        <div class="table-wrap" style="margin-top:16px">
+          <table>
+            <thead><tr><th>Assumption stressed</th><th>Stressed premium</th><th>Difference</th><th>% difference</th><th>Onerous?</th><th>CSM at inception</th></tr></thead>
+            <tbody id="sa-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel" id="sa-investment-panel" style="margin-bottom:16px">
+        <div class="panel-title">Investment Analysis <span style="font-weight:normal;color:#888;font-size:12px">— savings/investment fund projection (endowment-type products)</span></div>
+        <div style="font-size:12.5px;color:#888;margin-bottom:12px">
+          Projects the SAVINGS portion of a policyholder's contribution — not the risk premium already solved on Product Pricing — accumulated monthly at a credited interest rate, the same mechanic real micro-endowment products use (contribution = risk premium + investment portion, with interest credited on the investment portion only).
+        </div>
+        <div id="ia-note" style="display:none;background:#F1E9F6;color:#5a3d75;padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;line-height:1.5">
+          The currently configured product on Product Pricing isn't an endowment/savings type — investment analysis only applies where a maturity payout exists. Switch the Product Pricing page's product type to Endowment, Educational Endowment, or Pure Endowment to enable this.
+        </div>
+        <div id="ia-inputs" style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;margin-bottom:14px">
+          <div class="form-group" style="width:220px"><label>Illustrative contributions (GHS/month, comma-separated)</label><input type="text" id="ia-contributions" value="150,300,450,600"></div>
+          <div class="form-group" style="width:150px"><label>Credited rate (% p.a.)</label><input type="number" id="ia-credited-rate" value="5" step="0.1"></div>
+          <div class="form-group" style="width:130px"><label>Term (months)</label><input type="number" id="ia-term-months" value="24" min="1" max="600"></div>
+          <button class="btn btn-gold" onclick="runInvestmentAnalysis()" id="ia-btn-run">Run Investment Analysis</button>
+        </div>
+        <span id="ia-status" style="font-size:13px"></span>
+        <div id="ia-results" style="display:none;margin-top:14px">
+          <canvas id="ia-chart" height="110"></canvas>
+          <div class="table-wrap" style="margin-top:16px">
+            <table>
+              <thead id="ia-thead"></thead>
+              <tbody id="ia-body"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2085,6 +2107,7 @@ const PAGE_ON_SHOWN = {
   audittrail:      () => loadAuditTrail(),
   reserving:       () => loadReservingClients(),
   solvency:        () => loadSolvencyClients(),
+  sensitivity:     () => refreshInvestmentAnalysisGating(),
 };
 
 function navigateTo(pageId, groupLabel, itemLabel, el) {
@@ -2141,6 +2164,9 @@ let ppLastResult = null;
 let ppShowAllCashflowYears = false;
 let ppReserveChart = null, ppProfitChart = null, ppRateTableChart = null, ppCashflowChart = null;
 const PP_CASHFLOW_CHART_COLORS = ['#7B4FA0', '#c33', '#2a7', '#e8a33d', '#7a4fb5', '#1f9ba8'];
+let saTornadoChart = null, iaChart = null;
+const IA_ENDOWMENT_TYPES = new Set(['endowment', 'educational_endowment', 'pure_endowment']);
+const IA_CHART_COLORS = ['#7B4FA0', '#C9A84C', '#2a7', '#c33', '#1f9ba8', '#e8a33d'];
 
 function onProductTypeChanged() {
   const type = document.getElementById('pp-type').value;
@@ -2603,6 +2629,139 @@ async function runCustomSensitivity() {
   btn.disabled = false;
 }
 
+function refreshInvestmentAnalysisGating() {
+  const type = document.getElementById('pp-type').value;
+  const applicable = IA_ENDOWMENT_TYPES.has(type);
+  document.getElementById('ia-note').style.display = applicable ? 'none' : 'block';
+  document.getElementById('ia-inputs').style.display = applicable ? 'flex' : 'none';
+  document.getElementById('ia-btn-run').disabled = !applicable;
+  if (!applicable) {
+    document.getElementById('ia-results').style.display = 'none';
+    document.getElementById('ia-status').textContent = '';
+  }
+}
+
+async function runStandaloneSensitivity() {
+  const btn = document.getElementById('sa-btn-run');
+  const statusEl = document.getElementById('sa-status');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const body = { ...collectCustomProductRequest(), comprehensive: true };
+    const r = await apiFetch('/pricing/custom/sensitivity', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+
+    document.getElementById('sa-basis').textContent = `— ${d.data.product_name}, ${d.data.assumptions_used.name || 'Ghana Market Defaults'}`;
+    document.getElementById('sa-body').innerHTML = d.data.sensitivity.map(row => {
+      if (row.error) return `<tr><td>${_escapeHtml(row.assumption_stressed)}</td><td colspan="5" style="color:red">${_escapeHtml(row.error)}</td></tr>`;
+      return `<tr>
+        <td>${_escapeHtml(row.assumption_stressed)}</td>
+        <td>${fmt(row.stressed_premium)}</td>
+        <td style="color:${row.difference > 0 ? '#c33' : (row.difference < 0 ? '#2a7' : '#888')}">${row.difference >= 0 ? '+' : ''}${fmt(row.difference)}</td>
+        <td>${(row.pct_difference * 100).toFixed(2)}%</td>
+        <td style="color:${row.is_onerous ? '#c33' : '#2a7'}">${row.is_onerous ? 'Yes' : 'No'}</td>
+        <td>${fmt(row.csm_at_inception)}</td>
+      </tr>`;
+    }).join('');
+
+    const stressRows = d.data.sensitivity.filter(row => row.assumption_stressed !== 'Base case' && !row.error);
+    const sorted = [...stressRows].sort((a, b) => Math.abs(b.pct_difference) - Math.abs(a.pct_difference));
+    if (saTornadoChart) saTornadoChart.destroy();
+    saTornadoChart = new Chart(document.getElementById('sa-tornado-chart'), {
+      type: 'bar',
+      data: {
+        labels: sorted.map(r => r.assumption_stressed),
+        datasets: [{
+          label: '% change in premium',
+          data: sorted.map(r => r.pct_difference * 100),
+          backgroundColor: sorted.map(r => r.pct_difference >= 0 ? '#c33' : '#2a7'),
+        }],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        plugins: { legend: { display: false }, title: { display: true, text: 'Premium impact by assumption stressed (sorted by magnitude)' } },
+        scales: { x: { title: { display: true, text: '% change in premium' } } },
+      },
+    });
+
+    document.getElementById('sa-results-panel').style.display = 'block';
+    statusEl.innerHTML = `<span style="color:#2a7">Sensitivity analysis complete — ${stressRows.length} stresses run</span>`;
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+async function runInvestmentAnalysis() {
+  const btn = document.getElementById('ia-btn-run');
+  const statusEl = document.getElementById('ia-status');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Running...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const contributions = document.getElementById('ia-contributions').value
+      .split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n) && n > 0);
+    if (!contributions.length) throw new Error('Enter at least one contribution amount');
+    const body = {
+      ...collectCustomProductRequest(),
+      contributions_monthly: contributions,
+      credited_rate_pa: (parseFloat(document.getElementById('ia-credited-rate').value) || 5) / 100,
+      term_months: parseInt(document.getElementById('ia-term-months').value) || 24,
+    };
+    const r = await apiFetch('/pricing/custom/investment-analysis', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+
+    document.getElementById('ia-thead').innerHTML =
+      '<tr><th>Contribution/month</th><th>Risk premium</th><th>Investment portion/month</th><th>Total invested</th><th>Interest credited</th><th>Fund value at maturity</th></tr>';
+    document.getElementById('ia-body').innerHTML = d.data.funds.map(f => `
+      <tr>
+        <td>${fmt(f.monthly_contribution)}</td>
+        <td>${fmt(d.data.risk_premium)}</td>
+        <td>${fmt(f.summary.investment_portion_monthly)}</td>
+        <td>${fmt(f.summary.total_invested)}</td>
+        <td>${fmt(f.summary.total_interest_credited)}</td>
+        <td style="font-weight:600">${fmt(f.summary.closing_balance)}</td>
+      </tr>`).join('');
+
+    if (iaChart) iaChart.destroy();
+    iaChart = new Chart(document.getElementById('ia-chart'), {
+      type: 'line',
+      data: {
+        labels: d.data.funds[0].monthly_projection.map(row => 'M' + row.month),
+        datasets: d.data.funds.map((f, i) => ({
+          label: `GHS ${f.monthly_contribution}/month`,
+          data: f.monthly_projection.map(row => row.closing_balance),
+          borderColor: IA_CHART_COLORS[i % IA_CHART_COLORS.length],
+          backgroundColor: 'transparent',
+          tension: 0.2,
+        })),
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: true }, title: { display: true, text: `Fund value growth over ${d.data.term_months} months at ${(d.data.credited_rate_pa * 100).toFixed(1)}% p.a. credited` } },
+      },
+    });
+
+    document.getElementById('ia-results').style.display = 'block';
+    statusEl.innerHTML = '<span style="color:#2a7">Investment analysis complete</span>';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
 async function downloadCustomPricingExcel() {
   const btn = document.getElementById('pp-btn-download-excel');
   const original = btn.innerHTML;
@@ -2802,14 +2961,13 @@ async function runRateTable() {
     '<span class="spinner spinner-dark"></span> Generating rate table — please wait (30–60 seconds for all ages)...</td></tr>';
 
   const body = {
-    tier:      parseInt(document.getElementById('rt-tier').value),
-    product:   document.getElementById('rt-product').value,
+    ...collectCustomProductRequest(),
     age_start: parseInt(document.getElementById('rt-from').value),
     age_end:   parseInt(document.getElementById('rt-to').value),
   };
 
   try {
-    const r = await apiFetch('/rate-table', {
+    const r = await apiFetch('/pricing/custom/rate-table', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -2820,7 +2978,7 @@ async function runRateTable() {
     const ages  = Object.keys(table).map(Number).sort((a, b) => a - b);
 
     document.getElementById('rt-info').textContent =
-      `${d.data.ages_priced} ages priced in ${d.data.elapsed}s`;
+      `${body.product_name} — ${ages.length} ages priced`;
 
     const tbody = document.getElementById('rt-body');
     tbody.innerHTML = '';

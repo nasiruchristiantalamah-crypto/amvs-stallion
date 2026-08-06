@@ -45,7 +45,9 @@ from engine.assumptions_manager import AssumptionSet
 from engine.assumptions import ProductAssumptions, LapseSchedule
 from engine.custom_pricing import (
     build_custom_product, run_custom_pricing, run_custom_rate_table, run_custom_sensitivity,
+    SENSITIVITY_STRESSES, SENSITIVITY_STRESSES_SUMMARY,
 )
+from engine.investment_analysis import project_investment_fund, summarise_investment_fund
 from outputs.custom_pricing_excel_exporter import export_custom_pricing_to_excel, GENERATED_DIR as CUSTOM_PRICING_EXCEL_DIR
 from outputs.custom_pricing_word_exporter import generate_custom_pricing_avr_note, GENERATED_DIR as CUSTOM_PRICING_WORD_DIR
 from outputs.custom_pricing_memo_exporter import generate_actuarial_memorandum, GENERATED_DIR as CUSTOM_PRICING_MEMO_DIR
@@ -743,15 +745,57 @@ def pricing_custom_rate_table_endpoint(request: CustomRateTableRequest, db: Sess
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class CustomSensitivityRequest(CustomProductRequest):
+    comprehensive: bool = Field(False, description="False (default) = the Pricing page's own small summary sweep; True = the full comprehensive sweep used by the standalone Sensitivity Analysis page (finer gradations, more assumption types, IFRS 17 impact per stress).")
+
 @protected.post("/pricing/custom/sensitivity")
-def pricing_custom_sensitivity_endpoint(request: CustomProductRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def pricing_custom_sensitivity_endpoint(request: CustomSensitivityRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     _check_custom_product_type_supported(request.product_type)
     try:
         product = _build_product_from_request(request)
         assumptions = _resolve_custom_assumptions(request)
-        sensitivity = run_custom_sensitivity(product, assumptions, request.target_margin)
+        stresses = SENSITIVITY_STRESSES if request.comprehensive else SENSITIVITY_STRESSES_SUMMARY
+        sensitivity = run_custom_sensitivity(product, assumptions, request.target_margin, stresses=stresses)
         result = {"sensitivity": sensitivity, "assumptions_used": assumptions.to_dict(), "product_name": product.name}
         _log_valuation_run(db, current_user, "pricing_custom_sensitivity", request.model_dump(), result, client_id=None)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class InvestmentAnalysisRequest(CustomProductRequest):
+    contributions_monthly: List[float] = Field(default_factory=lambda: [150.0, 300.0, 450.0, 600.0], description="Illustrative total monthly contribution levels (GHS) to project side by side — mirrors a real product illustration's comparison table.")
+    credited_rate_pa: float = Field(0.05, gt=0, lt=1, description="Interest rate credited to the customer's savings fund per annum — distinct from the insurer's own investment return.")
+    term_months: int = Field(24, ge=1, le=600)
+
+@protected.post("/pricing/custom/investment-analysis")
+def pricing_custom_investment_analysis_endpoint(request: InvestmentAnalysisRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_custom_product_type_supported(request.product_type)
+    try:
+        product = _build_product_from_request(request)
+        assumptions = _resolve_custom_assumptions(request)
+        pricing_result = run_custom_pricing(product, assumptions, target_margin=request.target_margin, verbose=False)
+        risk_premium = pricing_result["monthly_premium"]
+
+        funds = []
+        for contribution in request.contributions_monthly:
+            rows = project_investment_fund(contribution, risk_premium, request.credited_rate_pa, request.term_months)
+            funds.append({
+                "monthly_contribution": contribution,
+                "monthly_projection": rows,
+                "summary": summarise_investment_fund(rows),
+            })
+
+        result = {
+            "risk_premium": risk_premium,
+            "credited_rate_pa": request.credited_rate_pa,
+            "term_months": request.term_months,
+            "funds": funds,
+            "product_name": product.name,
+        }
+        _log_valuation_run(db, current_user, "pricing_custom_investment_analysis", request.model_dump(), result, client_id=None)
         return {"success": True, "data": result}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -766,7 +810,24 @@ def pricing_custom_export_excel_endpoint(request: CustomProductRequest, db: Sess
         product = _build_product_from_request(request)
         assumptions = _resolve_custom_assumptions(request)
         result = run_custom_pricing(product, assumptions, target_margin=request.target_margin, verbose=False)
-        excel_path = export_custom_pricing_to_excel(result, request.model_dump())
+
+        # The download button hands over one product spec, but a genuinely
+        # useful export bundles everything the dashboard itself can show for
+        # it — rate table, the full comprehensive sensitivity sweep, and (for
+        # endowment-type products only) the investment fund projection —
+        # rather than making the user separately screenshot each tab.
+        rate_table = run_custom_rate_table(product, assumptions, 18, 70, request.target_margin)
+        sensitivity = run_custom_sensitivity(product, assumptions, request.target_margin, stresses=SENSITIVITY_STRESSES)
+        investment_analysis = None
+        if request.product_type in ("endowment", "educational_endowment", "pure_endowment"):
+            risk_premium = result["monthly_premium"]
+            funds = []
+            for contribution in (150.0, 300.0, 450.0, 600.0):
+                rows = project_investment_fund(contribution, risk_premium, 0.05, 24)
+                funds.append({"monthly_contribution": contribution, "monthly_projection": rows, "summary": summarise_investment_fund(rows)})
+            investment_analysis = {"risk_premium": risk_premium, "credited_rate_pa": 0.05, "term_months": 24, "funds": funds, "product_name": product.name}
+
+        excel_path = export_custom_pricing_to_excel(result, request.model_dump(), rate_table=rate_table, sensitivity=sensitivity, investment_analysis=investment_analysis)
         filename = os.path.basename(excel_path)
         response = {"excel_download_url": f"/pricing/custom/export-excel/download/{filename}"}
         _log_valuation_run(db, current_user, "pricing_custom_export_excel", request.model_dump(), response, client_id=None)

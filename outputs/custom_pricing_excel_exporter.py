@@ -9,8 +9,11 @@ What this file does:
     Flow by Covered Life (regulator-facing per-life detail — Main Life plus
     every dependant, each with their own opening lives/deaths/lapses/claims
     by rider), Reserve Projection, Profit Signature, and — when the caller
-    already generated them this session — Rate Table and Sensitivity
-    Analysis.
+    already generated them this session — Rate Table, Sensitivity Analysis,
+    and Investment Analysis. Reserve Projection, Profit Signature,
+    Sensitivity Analysis, and Investment Analysis each carry a native
+    embedded Excel chart alongside their data table (openpyxl.chart) —
+    not just numbers, the same visualisations the dashboard itself shows.
 ================================================================================
 """
 
@@ -19,6 +22,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import openpyxl
+from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -155,11 +159,21 @@ def _build_reserve_sheet(wb, result: dict):
     ws = wb.create_sheet("Reserve Projection")
     row = _write_title(ws, "Reserve Projection (Prospective Net Premium Reserve)")
     rows = result.get("reserve_projection", [])
+    table_row = row
     _write_table(
         ws, ["Policy year", "Opening reserve", "Premium", "Claims", "Expenses", "Investment income", "Closing reserve"],
         [[r["policy_year"], r["opening_reserve"], r["premium"], r["claims"], r["expenses"], r["investment_income"], r["closing_reserve"]] for r in rows],
         row,
     )
+    if rows:
+        data_first, data_last = table_row + 1, table_row + len(rows)
+        chart = LineChart()
+        chart.title = "Closing reserve by policy year"
+        chart.y_axis.title = "GHS"
+        chart.x_axis.title = "Policy year"
+        chart.add_data(Reference(ws, min_col=7, min_row=table_row, max_row=data_last), titles_from_data=True)
+        chart.set_categories(Reference(ws, min_col=1, min_row=data_first, max_row=data_last))
+        ws.add_chart(chart, f"I{table_row}")
 
 
 def _build_profit_signature_sheet(wb, result: dict):
@@ -167,7 +181,17 @@ def _build_profit_signature_sheet(wb, result: dict):
     sig = result.get("profit_signature", {})
     row = _write_title(ws, f"Profit Signature (Breakeven: Year {sig.get('breakeven_year', 'not reached')})")
     rows = sig.get("profit_by_year", [])
+    table_row = row
     _write_table(ws, ["Policy year", "Profit", "Cumulative profit"], [[r["policy_year"], r["profit"], r["cumulative_profit"]] for r in rows], row)
+    if rows:
+        data_first, data_last = table_row + 1, table_row + len(rows)
+        chart = BarChart()
+        chart.title = "Profit emerging by policy year"
+        chart.y_axis.title = "GHS"
+        chart.x_axis.title = "Policy year"
+        chart.add_data(Reference(ws, min_col=2, min_row=table_row, max_row=data_last), titles_from_data=True)
+        chart.set_categories(Reference(ws, min_col=1, min_row=data_first, max_row=data_last))
+        ws.add_chart(chart, f"E{table_row}")
 
 
 def _build_rate_table_sheet(wb, rate_table: Dict[int, dict]):
@@ -186,26 +210,104 @@ def _build_rate_table_sheet(wb, rate_table: Dict[int, dict]):
 def _build_sensitivity_sheet(wb, sensitivity: List[dict]):
     ws = wb.create_sheet("Sensitivity Analysis")
     row = _write_title(ws, "Sensitivity Analysis")
-    rows = [[r["assumption_stressed"], r.get("stressed_premium"), r.get("difference"), r.get("pct_difference")] for r in sensitivity]
-    _write_table(ws, ["Assumption stressed", "Stressed premium", "Difference", "% difference"], rows, row)
+    clean = [r for r in sensitivity if "error" not in r]
+    rows = [[r["assumption_stressed"], r.get("stressed_premium"), r.get("difference"), r.get("pct_difference"),
+              "Yes" if r.get("is_onerous") else "No", r.get("csm_at_inception")] for r in clean]
+    table_row = row
+    row = _write_table(ws, ["Assumption stressed", "Stressed premium", "Difference", "% difference", "Onerous?", "CSM at inception"], rows, row)
+    if rows:
+        data_first, data_last = table_row + 1, table_row + len(rows)
+        chart = BarChart()
+        chart.type = "bar"  # horizontal — tornado-style, matching the dashboard's own chart
+        chart.title = "Premium impact by assumption stressed"
+        chart.x_axis.title = "% change in premium"
+        chart.add_data(Reference(ws, min_col=4, min_row=table_row, max_row=data_last), titles_from_data=True)
+        chart.set_categories(Reference(ws, min_col=1, min_row=data_first, max_row=data_last))
+        chart.height, chart.width = 16, 24
+        ws.add_chart(chart, f"H{table_row}")
+
+
+def _build_investment_analysis_sheet(wb, investment_analysis: dict):
+    """
+    Savings/investment fund projection for endowment-type products —
+    engine/investment_analysis.py's output. Per the real client workbook
+    this mirrors (Afentoboa Plus's own InvestAnalysis sheet) and per
+    explicit instruction, the cash flow detail here is MONTHLY, not
+    annual — one column block per illustrative contribution level, plus
+    a line chart of fund value growing over the term.
+    """
+    funds = investment_analysis.get("funds") or []
+    if not funds:
+        return
+    ws = wb.create_sheet("Investment Analysis")
+    row = _write_title(ws, "Investment Analysis — Savings Fund Projection")
+
+    info_rows = [
+        ["Risk premium (GHS/month)", investment_analysis.get("risk_premium")],
+        ["Credited rate (p.a.)", investment_analysis.get("credited_rate_pa")],
+        ["Term (months)", investment_analysis.get("term_months")],
+    ]
+    row = _write_table(ws, ["Basis", "Value"], info_rows, row)
+
+    row = _write_title(ws, "Summary by illustrative contribution level", row)
+    summary_rows = [[
+        f["monthly_contribution"], investment_analysis.get("risk_premium"),
+        f["summary"]["investment_portion_monthly"], f["summary"]["total_invested"],
+        f["summary"]["total_interest_credited"], f["summary"]["closing_balance"],
+    ] for f in funds]
+    row = _write_table(
+        ws, ["Contribution/month", "Risk premium", "Investment portion/month", "Total invested", "Interest credited", "Fund value at maturity"],
+        summary_rows, row,
+    )
+
+    row = _write_title(ws, "Monthly fund projection (per illustrative contribution level)", row)
+    table_row = row
+    headers = ["Month"]
+    for f in funds:
+        label = f"GHS {f['monthly_contribution']}/mo"
+        headers += [f"{label} — contribution", f"{label} — investment portion", f"{label} — interest credited", f"{label} — closing balance"]
+    n_months = len(funds[0]["monthly_projection"])
+    month_rows = []
+    for m in range(n_months):
+        row_vals = [funds[0]["monthly_projection"][m]["month"]]
+        for f in funds:
+            r = f["monthly_projection"][m]
+            row_vals += [r["contribution"], r["investment_portion"], r["interest_credited"], r["closing_balance"]]
+        month_rows.append(row_vals)
+    _write_table(ws, headers, month_rows, row)
+
+    if month_rows:
+        data_first, data_last = table_row + 1, table_row + len(month_rows)
+        chart = LineChart()
+        chart.title = "Fund value growth by month"
+        chart.y_axis.title = "GHS"
+        chart.x_axis.title = "Month"
+        for i in range(len(funds)):
+            closing_col = 2 + i * 4 + 3  # Month(1) + i*4-col blocks, closing_balance is the 4th column in each block
+            chart.add_data(Reference(ws, min_col=closing_col, min_row=table_row, max_row=data_last), titles_from_data=True)
+        chart.set_categories(Reference(ws, min_col=1, min_row=data_first, max_row=data_last))
+        chart.height, chart.width = 16, 26
+        ws.add_chart(chart, f"A{data_last + 3}")
 
 
 def export_custom_pricing_to_excel(
-    result:            dict,
-    product_spec:      Optional[dict] = None,
-    rate_table:        Optional[Dict[int, dict]] = None,
-    sensitivity:       Optional[List[dict]] = None,
-    output_path:       Optional[str] = None,
+    result:              dict,
+    product_spec:        Optional[dict] = None,
+    rate_table:          Optional[Dict[int, dict]] = None,
+    sensitivity:         Optional[List[dict]] = None,
+    investment_analysis: Optional[dict] = None,
+    output_path:         Optional[str] = None,
 ) -> str:
     """
     Build the full custom-pricing workbook and write it to disk.
 
     Parameters:
-        result       : engine.custom_pricing.run_custom_pricing() output
-        product_spec : the raw CustomProductRequest dict, for context (currently only product_name is used beyond what `result` already carries)
-        rate_table   : optional run_custom_rate_table() output — adds a Rate Table sheet if given
-        sensitivity  : optional run_custom_sensitivity() output — adds a Sensitivity Analysis sheet if given
-        output_path  : file path to write to; defaults to outputs/generated/CustomPricing_<name>_<timestamp>.xlsx
+        result              : engine.custom_pricing.run_custom_pricing() output
+        product_spec        : the raw CustomProductRequest dict, for context (currently only product_name is used beyond what `result` already carries)
+        rate_table          : optional run_custom_rate_table() output — adds a Rate Table sheet if given
+        sensitivity         : optional run_custom_sensitivity() output — adds a Sensitivity Analysis sheet if given
+        investment_analysis : optional /pricing/custom/investment-analysis response — adds an Investment Analysis sheet if given (endowment-type products only)
+        output_path         : file path to write to; defaults to outputs/generated/CustomPricing_<name>_<timestamp>.xlsx
 
     Returns:
         The path the workbook was written to.
@@ -221,6 +323,8 @@ def export_custom_pricing_to_excel(
         _build_rate_table_sheet(wb, rate_table)
     if sensitivity:
         _build_sensitivity_sheet(wb, sensitivity)
+    if investment_analysis:
+        _build_investment_analysis_sheet(wb, investment_analysis)
 
     if output_path is None:
         os.makedirs(GENERATED_DIR, exist_ok=True)

@@ -426,31 +426,61 @@ def run_custom_rate_table(
         try:
             premium, pv = solve_premium(asmp, product, target_margin)
             table[age] = {
-                "monthly_premium": round(premium, 2),
-                "annual_premium":  round(premium * 12, 2),
-                "profit_margin":   round(pv.profit_margin, 4),
-                "is_onerous":      pv.is_onerous,
+                "monthly_premium":   round(premium, 2),
+                "annual_premium":    round(premium * 12, 2),
+                "profit_margin":     round(pv.profit_margin, 4),
+                "csm_at_inception":  round(pv.csm_at_inception, 2),
+                "lrc_total":         round(pv.lrc_total, 2),
+                "is_onerous":        pv.is_onerous,
             }
         except ValueError as e:
             table[age] = {"error": str(e)}
     return table
 
 
-# One-at-a-time stresses for the sensitivity tab — additive for rates
-# already expressed as +/- loadings (mortality), multiplicative for
-# scalars where a relative shift is the natural stress (expenses,
-# lapses), and a flat +/-100bps for the valuation rate (the conventional
-# way an actuary stresses a discount rate, not a % change of it).
+# One-at-a-time stresses for the standalone Sensitivity Analysis page —
+# additive for rates already expressed as +/- loadings (mortality),
+# multiplicative for scalars where a relative shift is the natural stress
+# (expenses, lapses, commission), and a flat +/-100bps for the valuation
+# rate (the conventional way an actuary stresses a discount rate, not a %
+# change of it). Finer gradations (5/10/20%) and more assumption types
+# than the Pricing page's own Sensitivity tab shows — this is the
+# comprehensive version; that tab stays a smaller, faster-to-read summary.
 SENSITIVITY_STRESSES = [
-    ("Mortality +10%",     lambda a: setattr(a, "mortality_loading", a.mortality_loading + 0.10)),
-    ("Mortality -10%",     lambda a: setattr(a, "mortality_loading", a.mortality_loading - 0.10)),
-    ("Lapses +10%",        lambda a: _scale_lapses(a, 1.10)),
-    ("Lapses -10%",        lambda a: _scale_lapses(a, 0.90)),
-    ("Expenses +10%",      lambda a: _scale_expenses(a, 1.10)),
-    ("Expenses -10%",      lambda a: _scale_expenses(a, 0.90)),
-    ("Valuation rate +1%", lambda a: setattr(a, "valuation_rate_pa", a.valuation_rate_pa + 0.01)),
-    ("Valuation rate -1%", lambda a: setattr(a, "valuation_rate_pa", a.valuation_rate_pa - 0.01)),
+    ("Mortality +5%",       lambda a: setattr(a, "mortality_loading", a.mortality_loading + 0.05)),
+    ("Mortality -5%",       lambda a: setattr(a, "mortality_loading", a.mortality_loading - 0.05)),
+    ("Mortality +10%",      lambda a: setattr(a, "mortality_loading", a.mortality_loading + 0.10)),
+    ("Mortality -10%",      lambda a: setattr(a, "mortality_loading", a.mortality_loading - 0.10)),
+    ("Mortality +20%",      lambda a: setattr(a, "mortality_loading", a.mortality_loading + 0.20)),
+    ("Mortality -20%",      lambda a: setattr(a, "mortality_loading", a.mortality_loading - 0.20)),
+    ("Lapses +5%",          lambda a: _scale_lapses(a, 1.05)),
+    ("Lapses -5%",          lambda a: _scale_lapses(a, 0.95)),
+    ("Lapses +10%",         lambda a: _scale_lapses(a, 1.10)),
+    ("Lapses -10%",         lambda a: _scale_lapses(a, 0.90)),
+    ("Lapses +20%",         lambda a: _scale_lapses(a, 1.20)),
+    ("Lapses -20%",         lambda a: _scale_lapses(a, 0.80)),
+    ("Expenses +5%",        lambda a: _scale_expenses(a, 1.05)),
+    ("Expenses -5%",        lambda a: _scale_expenses(a, 0.95)),
+    ("Expenses +10%",       lambda a: _scale_expenses(a, 1.10)),
+    ("Expenses -10%",       lambda a: _scale_expenses(a, 0.90)),
+    ("Expenses +20%",       lambda a: _scale_expenses(a, 1.20)),
+    ("Expenses -20%",       lambda a: _scale_expenses(a, 0.80)),
+    ("Valuation rate +1%",  lambda a: setattr(a, "valuation_rate_pa", a.valuation_rate_pa + 0.01)),
+    ("Valuation rate -1%",  lambda a: setattr(a, "valuation_rate_pa", a.valuation_rate_pa - 0.01)),
+    ("Investment return +2%", lambda a: setattr(a, "investment_rate_pa", a.investment_rate_pa + 0.02)),
+    ("Investment return -2%", lambda a: setattr(a, "investment_rate_pa", a.investment_rate_pa - 0.02)),
+    ("Collection rate +10pp", lambda a: setattr(a, "collection_rate", min(1.0, a.collection_rate + 0.10))),
+    ("Collection rate -10pp", lambda a: setattr(a, "collection_rate", max(0.0, a.collection_rate - 0.10))),
+    ("Commission +5pp",     lambda a: _scale_commission(a, 0.05)),
+    ("Commission -5pp",     lambda a: _scale_commission(a, -0.05)),
 ]
+
+# The Pricing page's own Sensitivity tab keeps the smaller, original set —
+# a fast-to-read summary, not the full comprehensive sweep above.
+SENSITIVITY_STRESSES_SUMMARY = [s for s in SENSITIVITY_STRESSES if s[0] in (
+    "Mortality +10%", "Mortality -10%", "Lapses +10%", "Lapses -10%",
+    "Expenses +10%", "Expenses -10%", "Valuation rate +1%", "Valuation rate -1%",
+)]
 
 
 def _scale_lapses(a: ProductAssumptions, factor: float) -> None:
@@ -465,29 +495,60 @@ def _scale_expenses(a: ProductAssumptions, factor: float) -> None:
     a.claims_admin_cost          *= factor
 
 
+def _scale_commission(a: ProductAssumptions, delta_pp: float) -> None:
+    from engine.assumptions import CommissionSchedule, FixedScaleCommission
+    if isinstance(a.commission, FixedScaleCommission):
+        # A flat GHS scale isn't expressed in percentage points — shift it
+        # by the same proportion instead, so "+5pp"/"-5pp" still means
+        # something directionally sensible for this commission type.
+        factor = 1 + (delta_pp / 0.15)   # 0.15 ~ typical percentage commission scale, kept simple
+        a.commission = FixedScaleCommission(rates={y: max(0.0, v * factor) for y, v in a.commission.rates.items()})
+    elif a.commission.rates:
+        a.commission = CommissionSchedule(rates={y: max(0.0, min(1.0, r + delta_pp)) for y, r in a.commission.rates.items()})
+    else:
+        a.commission = CommissionSchedule(
+            initial_rate=max(0.0, min(1.0, a.commission.initial_rate + delta_pp)),
+            renewal_rate=max(0.0, min(1.0, a.commission.renewal_rate + delta_pp)),
+        )
+
+
 def run_custom_sensitivity(
     product:        Product,
     assumptions:    ProductAssumptions,
     target_margin:  Optional[float] = None,
+    stresses:       Optional[list]  = None,
 ) -> List[dict]:
-    """Re-solve the premium with each SENSITIVITY_STRESSES entry applied one at a time; base case included first for reference."""
-    base_premium, _ = solve_premium(assumptions, product, target_margin)
+    """
+    Re-solve the premium with each stress applied one at a time; base case
+    included first for reference. Each result includes the resulting
+    is_onerous/csm_at_inception too, not just the premium — a stress can
+    flip a contract onerous even when the premium itself barely moves.
+
+    `stresses` defaults to the full SENSITIVITY_STRESSES sweep — pass
+    SENSITIVITY_STRESSES_SUMMARY for the Pricing page's smaller tab.
+    """
+    if stresses is None:
+        stresses = SENSITIVITY_STRESSES
+    base_premium, base_pv = solve_premium(assumptions, product, target_margin)
 
     results = [{
         "assumption_stressed": "Base case", "stressed_premium": round(base_premium, 2),
         "difference": 0.0, "pct_difference": 0.0,
+        "is_onerous": base_pv.is_onerous, "csm_at_inception": round(base_pv.csm_at_inception, 2),
     }]
-    for label, apply_stress in SENSITIVITY_STRESSES:
+    for label, apply_stress in stresses:
         asmp = copy.deepcopy(assumptions)
         apply_stress(asmp)
         try:
-            premium, _ = solve_premium(asmp, product, target_margin)
+            premium, pv = solve_premium(asmp, product, target_margin)
             diff = premium - base_premium
             results.append({
                 "assumption_stressed": label,
                 "stressed_premium":     round(premium, 2),
                 "difference":            round(diff, 2),
                 "pct_difference":         round(diff / base_premium, 4) if base_premium else 0.0,
+                "is_onerous":            pv.is_onerous,
+                "csm_at_inception":      round(pv.csm_at_inception, 2),
             })
         except ValueError as e:
             results.append({"assumption_stressed": label, "error": str(e)})
