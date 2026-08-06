@@ -47,8 +47,17 @@ class CashFlowRow:
     investment_income:  float
 
     # ── BENEFIT OUTFLOWS ─────────────────────────────────────────────────
-    benefit_lines:      Dict[str, float] = field(default_factory=dict)   # keyed by rider name
+    benefit_lines:      Dict[str, float] = field(default_factory=dict)   # keyed by rider name — every life's cost for that rider, combined
     total_benefits:     float = 0.0                                       # sum of benefit_lines
+
+    # Same benefit cost, but split out by WHICH covered life it belongs to
+    # — {"Main Life": {rider_name: amount}, "Spouse": {...}, ...}. Additive
+    # only: benefit_lines above is unchanged, and summing every life's
+    # entry for a given rider reproduces benefit_lines[rider] exactly —
+    # this is that same total attributed to who it's actually for, needed
+    # for a regulator-facing per-life audit trail (see
+    # engine/custom_pricing.py's per-life annual rollup).
+    benefit_lines_by_life: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
     # ── EXPENSE OUTFLOWS ─────────────────────────────────────────────────
     commission:         float = 0.0
@@ -60,6 +69,29 @@ class CashFlowRow:
     # ── NET POSITION ─────────────────────────────────────────────────────
     net_cashflow:        float = 0.0
     cumulative_cashflow: float = 0.0
+
+
+def _dependant_life_labels(product: Product) -> List[str]:
+    """
+    A readable, stable label per dependant for the per-life breakdown —
+    "Spouse", "Parent", "Child", ... or "Child 1" / "Child 2" if a product
+    has more than one dependant with the same relationship (only possible
+    when using build_custom_product/Product directly with a hand-built
+    dependants list, since the dashboard caps relationship types at one
+    each — this still resolves unambiguously either way).
+    """
+    counts: Dict[str, int] = {}
+    for d in product.dependants:
+        counts[d.relationship] = counts.get(d.relationship, 0) + 1
+    seen: Dict[str, int] = {}
+    labels = []
+    for d in product.dependants:
+        label = d.relationship.title()
+        if counts[d.relationship] > 1:
+            seen[d.relationship] = seen.get(d.relationship, 0) + 1
+            label = f"{label} {seen[d.relationship]}"
+        labels.append(label)
+    return labels
 
 
 def _rider_active(rider, month: int) -> bool:
@@ -92,6 +124,7 @@ def calculate_cash_flows(
     """
     rows: List[CashFlowRow] = []
     cumulative_cf = 0.0
+    life_labels = _dependant_life_labels(product)
 
     for dec in decrement_rows:
         month    = dec.month
@@ -139,7 +172,15 @@ def calculate_cash_flows(
 
         # ── BENEFIT LINES — one per rider, generic ───────────────────────
         benefit_lines: Dict[str, float] = {}
+        benefit_lines_by_life: Dict[str, Dict[str, float]] = {"Main Life": {}}
+        for label in life_labels:
+            benefit_lines_by_life[label] = {}
         expected_events = 0.0   # drives claims_admin cost
+
+        def _add_to_life(life_label: str, rider_name: str, value: float) -> None:
+            if value == 0:
+                return
+            benefit_lines_by_life[life_label][rider_name] = benefit_lines_by_life[life_label].get(rider_name, 0.0) + value
 
         for rider in product.riders:
             if not _rider_active(rider, month):
@@ -149,8 +190,10 @@ def calculate_cash_flows(
             benefit_mult = rider.get_benefit_multiplier(pol_year)   # 1.0 unless a decreasing-term schedule is set
 
             if rider.incidence_basis == "mortality":
-                amount = dec.main.dx * rider.benefit_main * benefit_mult
+                main_amount = dec.main.dx * rider.benefit_main * benefit_mult
+                amount = main_amount
                 expected_events += dec.main.dx
+                _add_to_life("Main Life", rider.name, main_amount)
                 for i, dependant in enumerate(product.dependants):
                     dep_dec = dec.dependants.get(i)
                     if dep_dec is None:
@@ -158,8 +201,10 @@ def calculate_cash_flows(
                     dep_benefit = dependant.get_dependant_benefit(rider.name, rider.benefit_dependant)
                     if dep_benefit == 0:
                         continue
-                    amount += dep_dec.dx * dep_benefit * benefit_mult
+                    dep_amount = dep_dec.dx * dep_benefit * benefit_mult
+                    amount += dep_amount
                     expected_events += dep_dec.dx
+                    _add_to_life(life_labels[i], rider.name, dep_amount)
             elif rider.incidence_basis == "mortality_multiple":
                 # Frequency = a fixed multiple of the SAME dx used for the
                 # death benefit — e.g. TPD priced as "20% of the mortality
@@ -167,8 +212,10 @@ def calculate_cash_flows(
                 # unlike a flat annual_incidence_rate held constant across
                 # every age.
                 mult = rider.mortality_multiplier or 0.0
-                amount = dec.main.dx * mult * rider.benefit_main * benefit_mult
+                main_amount = dec.main.dx * mult * rider.benefit_main * benefit_mult
+                amount = main_amount
                 expected_events += dec.main.dx * mult
+                _add_to_life("Main Life", rider.name, main_amount)
                 for i, dependant in enumerate(product.dependants):
                     dep_dec = dec.dependants.get(i)
                     if dep_dec is None:
@@ -176,12 +223,16 @@ def calculate_cash_flows(
                     dep_benefit = dependant.get_dependant_benefit(rider.name, rider.benefit_dependant)
                     if dep_benefit == 0:
                         continue
-                    amount += dep_dec.dx * mult * dep_benefit * benefit_mult
+                    dep_amount = dep_dec.dx * mult * dep_benefit * benefit_mult
+                    amount += dep_amount
                     expected_events += dep_dec.dx * mult
+                    _add_to_life(life_labels[i], rider.name, dep_amount)
             else:
                 monthly_incidence = rider.annual_incidence_rate / 12
-                amount = lx * monthly_incidence * rider.benefit_main * benefit_mult * rider.avg_events_per_year
+                main_amount = lx * monthly_incidence * rider.benefit_main * benefit_mult * rider.avg_events_per_year
+                amount = main_amount
                 expected_events += lx * monthly_incidence
+                _add_to_life("Main Life", rider.name, main_amount)
                 for i, dependant in enumerate(product.dependants):
                     dep_dec = dec.dependants.get(i)
                     if dep_dec is None:
@@ -190,8 +241,10 @@ def calculate_cash_flows(
                     if dep_benefit == 0:
                         continue
                     dep_lx = dep_dec.lx
-                    amount += dep_lx * monthly_incidence * dep_benefit * benefit_mult * rider.avg_events_per_year
+                    dep_amount = dep_lx * monthly_incidence * dep_benefit * benefit_mult * rider.avg_events_per_year
+                    amount += dep_amount
                     expected_events += dep_lx * monthly_incidence
+                    _add_to_life(life_labels[i], rider.name, dep_amount)
 
             benefit_lines[rider.name] = amount
 
@@ -200,8 +253,12 @@ def calculate_cash_flows(
         # product an endowment/educational endowment. Weighted by lx_end
         # (survivors after this month's deaths/lapses), since anyone who
         # died this month already received the death benefit above instead.
+        # Attributed to Main Life — maturity_benefits is product-level, not
+        # per-rider, so there's no per-dependant benefit to split out here.
         if month % 12 == 0 and pol_year in product.maturity_benefits:
-            benefit_lines["Maturity Benefit"] = dec.main.lx_end * product.maturity_benefits[pol_year]
+            maturity_amount = dec.main.lx_end * product.maturity_benefits[pol_year]
+            benefit_lines["Maturity Benefit"] = maturity_amount
+            _add_to_life("Main Life", "Maturity Benefit", maturity_amount)
 
         total_ben = sum(benefit_lines.values())
         claims_admin = expected_events * assumptions.claims_admin_cost
@@ -220,6 +277,7 @@ def calculate_cash_flows(
             net_premium         = net_prem,
             investment_income   = inv_income,
             benefit_lines       = benefit_lines,
+            benefit_lines_by_life = benefit_lines_by_life,
             total_benefits      = total_ben,
             commission          = commission,
             acquisition_cost    = acq_cost,

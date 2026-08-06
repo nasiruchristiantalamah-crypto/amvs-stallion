@@ -5,9 +5,12 @@ CUSTOM PRODUCT PRICING — Excel export
 What this file does:
     Writes the "Download Excel" button's workbook for the dashboard's Part 4
     product pricing platform (engine/custom_pricing.py's run_custom_pricing()
-    output). Sheets: Product Summary, Assumptions, Annual Cash Flow, Reserve
-    Projection, Profit Signature, and — when the caller already generated
-    them this session — Rate Table and Sensitivity Analysis.
+    output). Sheets: Product Summary, Assumptions, Annual Cash Flow, Cash
+    Flow by Covered Life (regulator-facing per-life detail — Main Life plus
+    every dependant, each with their own opening lives/deaths/lapses/claims
+    by rider), Reserve Projection, Profit Signature, and — when the caller
+    already generated them this session — Rate Table and Sensitivity
+    Analysis.
 ================================================================================
 """
 
@@ -106,6 +109,48 @@ def _build_annual_cashflow_sheet(wb, result: dict):
     )
 
 
+def _build_cashflow_by_life_sheet(wb, result: dict):
+    """
+    Regulator-facing detail: the SAME annual cash flows as the "Annual
+    Cash Flow" sheet, but attributed to WHICH covered life they actually
+    belong to (Main Life, then each dependant in turn) — not just a
+    portfolio total. One section per life, all in this one sheet, each
+    showing that life's own opening lives, expected deaths/lapses, and
+    claims by rider. Every life's total_claims for a given year sums back
+    to the combined "Annual Cash Flow" sheet's figure exactly — this is
+    the same computed data attributed, not a separate calculation.
+    """
+    by_life = result.get("annual_cashflow_by_life") or {}
+    if not by_life:
+        return
+    ws = wb.create_sheet("Cash Flow by Covered Life")
+    row = _write_title(ws, f"Annual Cash Flow by Covered Life — {result.get('product_name', 'Custom Product')}")
+
+    LIFE_SECTION_FILL = PatternFill(start_color="5b5967", end_color="5b5967", fill_type="solid")
+    LIFE_SECTION_FONT = Font(bold=True, size=12, color="FFFFFF")
+
+    for life_label, rows in by_life.items():
+        cell = ws.cell(row=row, column=1, value=life_label.upper())
+        cell.font = LIFE_SECTION_FONT
+        cell.fill = LIFE_SECTION_FILL
+        last_col = max(6, len(rows[0]["claims_by_rider"]) + 5) if rows else 6
+        for c in range(1, last_col + 1):
+            ws.cell(row=row, column=c).fill = LIFE_SECTION_FILL
+        row += 1
+
+        rider_names = list(rows[0]["claims_by_rider"].keys()) if rows else []
+        headers = ["Policy year", "Opening lives", "Expected deaths", "Expected lapses"] + \
+                  [f"{r} (GHS)" for r in rider_names] + ["Total claims (GHS)"]
+        table_rows = [
+            [r["policy_year"], r["opening_lives"], r["expected_deaths"], r["expected_lapses"]] +
+            [r["claims_by_rider"].get(rn, 0.0) for rn in rider_names] + [r["total_claims"]]
+            for r in rows
+        ]
+        row = _write_table(ws, headers, table_rows, row)
+
+    ws.column_dimensions["A"].width = 14
+
+
 def _build_reserve_sheet(wb, result: dict):
     ws = wb.create_sheet("Reserve Projection")
     row = _write_title(ws, "Reserve Projection (Prospective Net Premium Reserve)")
@@ -169,6 +214,7 @@ def export_custom_pricing_to_excel(
     _build_summary_sheet(wb, result, product_spec or {})
     _build_assumptions_sheet(wb, result)
     _build_annual_cashflow_sheet(wb, result)
+    _build_cashflow_by_life_sheet(wb, result)
     _build_reserve_sheet(wb, result)
     _build_profit_signature_sheet(wb, result)
     if rate_table:

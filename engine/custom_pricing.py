@@ -56,7 +56,7 @@ from typing import Any, Dict, List, Optional
 from engine.assumptions import ProductAssumptions
 from engine.product import Dependant, Product, Rider
 from engine.decrement import run_decrement_projection
-from engine.cashflows import calculate_cash_flows, CashFlowRow
+from engine.cashflows import calculate_cash_flows, CashFlowRow, _dependant_life_labels
 from engine.present_value import calculate_present_values
 from engine.pricing import solve_premium
 
@@ -237,6 +237,70 @@ def _annual_cashflow_rollup(cf_rows: List[CashFlowRow], dec_rows, product: Produ
     return result
 
 
+def _annual_cashflow_by_life_rollup(cf_rows: List[CashFlowRow], dec_rows, product: Product) -> Dict[str, List[dict]]:
+    """
+    Same idea as _annual_cashflow_rollup, but split out per COVERED LIFE
+    instead of combined — one row per (policy year, life), with that
+    life's own opening lives, expected deaths/lapses, and claims by rider.
+    Regulator-facing audit trail: every dependant's contribution to the
+    priced cash flows is traceable on its own, not just folded into a
+    portfolio total. Summing every life's claims_by_rider for a given
+    rider and year reproduces _annual_cashflow_rollup's combined figure
+    exactly (see engine/cashflows.py's benefit_lines_by_life, which this
+    rolls up to annual granularity the same way the combined version does).
+
+    Returns {life_label: [rows...]}, e.g. {"Main Life": [...], "Spouse": [...]}.
+    """
+    dep_labels = _dependant_life_labels(product)
+    life_labels = ["Main Life"] + dep_labels
+
+    # Opening lives / expected deaths / expected lapses, per life per year —
+    # from the decrement projection directly (not the cash flow rows).
+    opening_lives: Dict[str, Dict[int, float]] = {label: {} for label in life_labels}
+    deaths: Dict[str, Dict[int, float]] = {label: {} for label in life_labels}
+    lapses: Dict[str, Dict[int, float]] = {label: {} for label in life_labels}
+
+    for dec in dec_rows:
+        y = dec.policy_year
+        opening_lives["Main Life"].setdefault(y, dec.main.lx)
+        deaths["Main Life"][y] = deaths["Main Life"].get(y, 0.0) + dec.main.dx
+        lapses["Main Life"][y] = lapses["Main Life"].get(y, 0.0) + dec.main.wx
+        for i, label in enumerate(dep_labels):
+            dep_dec = dec.dependants.get(i)
+            if dep_dec is None:
+                continue
+            opening_lives[label].setdefault(y, dep_dec.lx)
+            deaths[label][y] = deaths[label].get(y, 0.0) + dep_dec.dx
+            lapses[label][y] = lapses[label].get(y, 0.0) + dep_dec.wx
+
+    result: Dict[str, List[dict]] = {}
+    for label in life_labels:
+        years: Dict[int, dict] = {}
+        for cf in cf_rows:
+            y = cf.policy_year
+            if y not in years:
+                years[y] = {
+                    "policy_year": y,
+                    "opening_lives": round(opening_lives[label].get(y, 0.0), 6),
+                    "expected_deaths": 0.0, "expected_lapses": 0.0,
+                    "claims_by_rider": {r.name: 0.0 for r in product.riders},
+                    "total_claims": 0.0,
+                }
+            row = years[y]
+            for rider_name, amount in cf.benefit_lines_by_life.get(label, {}).items():
+                row["claims_by_rider"][rider_name] = row["claims_by_rider"].get(rider_name, 0.0) + amount
+
+        for y, row in years.items():
+            row["expected_deaths"] = round(deaths[label].get(y, 0.0), 6)
+            row["expected_lapses"] = round(lapses[label].get(y, 0.0), 6)
+            row["claims_by_rider"] = {k: round(v, 2) for k, v in row["claims_by_rider"].items()}
+            row["total_claims"] = round(sum(row["claims_by_rider"].values()), 2)
+
+        result[label] = [years[y] for y in sorted(years.keys())]
+
+    return result
+
+
 def _reserve_projection(cf_rows: List[CashFlowRow], monthly_discount_rate: float) -> List[dict]:
     """
     Prospective net premium reserve at the START of each policy year:
@@ -318,6 +382,7 @@ def run_custom_pricing(
     cf_rows  = calculate_cash_flows(dec_rows, assumptions, product, premium)
 
     annual_cashflow = _annual_cashflow_rollup(cf_rows, dec_rows, product)
+    annual_cashflow_by_life = _annual_cashflow_by_life_rollup(cf_rows, dec_rows, product)
     reserve         = _reserve_projection(cf_rows, assumptions.valuation_rate_monthly)
     profit_sig      = _profit_signature(cf_rows)
 
@@ -339,6 +404,7 @@ def run_custom_pricing(
         "is_onerous":           pv.is_onerous,
         "loss_component":       round(pv.loss_component, 2),
         "annual_cashflow":      annual_cashflow,
+        "annual_cashflow_by_life": annual_cashflow_by_life,
         "reserve_projection":   reserve,
         "profit_signature":     profit_sig,
         "assumptions_used":     assumptions.to_dict(),
