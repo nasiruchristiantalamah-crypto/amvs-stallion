@@ -52,6 +52,7 @@ from engine.investment_analysis import project_investment_fund, summarise_invest
 from outputs.custom_pricing_excel_exporter import export_custom_pricing_to_excel, GENERATED_DIR as CUSTOM_PRICING_EXCEL_DIR
 from outputs.custom_pricing_word_exporter import generate_custom_pricing_avr_note, GENERATED_DIR as CUSTOM_PRICING_WORD_DIR
 from outputs.custom_pricing_memo_exporter import generate_actuarial_memorandum, GENERATED_DIR as CUSTOM_PRICING_MEMO_DIR
+from outputs.custom_pricing_memo_pdf_exporter import generate_actuarial_memorandum_pdf, GENERATED_DIR as CUSTOM_PRICING_MEMO_PDF_DIR
 from outputs.excel_exporter import export_nonlife_statements_to_excel, GENERATED_DIR
 
 from db.database import DATABASE_URL, SessionLocal, engine as db_engine, get_db, init_db
@@ -989,6 +990,40 @@ def download_custom_pricing_memo(filename: str):
     if not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
     return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=safe_name)
+
+
+@protected.post("/pricing/custom/export-memo-pdf")
+def pricing_custom_export_memo_pdf_endpoint(request: ActuarialMemoRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _check_custom_product_type_supported(request.product_type)
+    try:
+        product = _build_product_from_request(request)
+        assumptions = _resolve_custom_assumptions(request)
+        result = run_custom_pricing(product, assumptions, target_margin=request.target_margin, verbose=False)
+        rate_table = run_custom_rate_table(product, assumptions, request.age_start, request.age_end, request.target_margin)
+        pdf_path = generate_actuarial_memorandum_pdf(
+            result, rate_table, request.model_dump(), request.narrative.model_dump(),
+            appointed_actuary=request.appointed_actuary, consulting_firm=request.consulting_firm,
+            product=product, assumptions=assumptions,
+        )
+        filename = os.path.basename(pdf_path)
+        response = {"memo_pdf_download_url": f"/pricing/custom/export-memo-pdf/download/{filename}"}
+        _log_valuation_run(db, current_user, "pricing_custom_export_memo_pdf", request.model_dump(), response, client_id=None)
+        return {"success": True, "data": response}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@protected.get("/pricing/custom/export-memo-pdf/download/{filename}")
+def download_custom_pricing_memo_pdf(filename: str):
+    safe_name = os.path.basename(filename)
+    if safe_name != filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = os.path.join(CUSTOM_PRICING_MEMO_PDF_DIR, safe_name)
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="File not found — it may have been generated in a different session")
+    return FileResponse(path, media_type="application/pdf", filename=safe_name)
 
 
 @protected.post("/reserving")

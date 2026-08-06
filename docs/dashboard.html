@@ -852,6 +852,7 @@
           </div>
 
           <button class="btn btn-primary" onclick="generateActuarialMemo()" id="pp-btn-memo">Generate Memorandum (Word)</button>
+          <button class="btn btn-primary" onclick="generateActuarialMemoPdf()" id="pp-btn-memo-pdf" style="margin-left:8px">Generate Memorandum (PDF)</button>
           <span id="pp-memo-status" style="font-size:13px;margin-left:10px"></span>
         </div>
 
@@ -2848,6 +2849,36 @@ async function generateActuarialMemo() {
     const filename = d.data.memo_download_url.split('/').pop();
     await downloadFile(d.data.memo_download_url, filename);
     statusEl.innerHTML = '<span style="color:#2a7">Memorandum generated</span>';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
+}
+
+async function generateActuarialMemoPdf() {
+  const btn = document.getElementById('pp-btn-memo-pdf');
+  const statusEl = document.getElementById('pp-memo-status');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Generating...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const body = {
+      ...collectCustomProductRequest(),
+      narrative: collectActuarialMemoNarrative(),
+      appointed_actuary: document.getElementById('memo-actuary').value || 'Charles Osei-Akoto, ASA, MAAA',
+      consulting_firm: document.getElementById('memo-firm').value || 'Stallion Consultants Ltd',
+      age_start: 18, age_end: 70,
+    };
+    const r = await apiFetch('/pricing/custom/export-memo-pdf', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    const filename = d.data.memo_pdf_download_url.split('/').pop();
+    await downloadFile(d.data.memo_pdf_download_url, filename);
+    statusEl.innerHTML = '<span style="color:#2a7">Memorandum (PDF) generated</span>';
   } catch (e) {
     statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
   }
