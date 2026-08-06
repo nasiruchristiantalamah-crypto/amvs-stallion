@@ -1104,6 +1104,16 @@
         </div>
       </div>
 
+      <div class="panel" id="data-quality-panel" style="margin-bottom:16px;display:none">
+        <div class="panel-title">Data quality <span id="dq-count-badge" style="font-weight:normal;color:#888;font-size:12px"></span></div>
+        <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
+          Checked automatically before the figures below were computed — none of this blocks the run, every
+          flag here is for a reviewing actuary to confirm or dismiss (see the note on each one). Not shown when
+          there's nothing to flag.
+        </p>
+        <div id="data-quality-body"></div>
+      </div>
+
       <div class="panel" style="margin-bottom:16px">
         <div class="panel-title">Gross</div>
         <div class="table-wrap">
@@ -3010,16 +3020,48 @@ async function runRateTable() {
 }
 
 // ── NON-LIFE RESERVING ──────────────────────────────────────────────────────
-function nicRow(cls, row, warning) {
+function nicRow(cls, row, warning, dqIssues) {
+  const dqCount = dqIssues ? dqIssues.length : 0;
+  const dqBadge = dqCount ? ` <span class="badge-warning" title="${dqCount} data quality issue(s) flagged for this class">${dqCount} flagged</span>` : '';
   return `
     <tr>
-      <td><strong>${cls}</strong>${warning ? ' <span class="badge-warning">Review required</span>' : ''}</td>
+      <td><strong>${cls}</strong>${warning ? ' <span class="badge-warning">Review required</span>' : ''}${dqBadge}</td>
       <td>${fmt(row.ibnr)}</td>
       <td>${fmt(row.ocr)}</td>
       <td>${fmt(row.ulae)}</td>
       <td>${fmt(row.upr)}</td>
       <td>${fmt(row.dac)}</td>
     </tr>`;
+}
+
+// Reviewable, non-blocking data-quality flags from engine/data_quality.py —
+// grouped by class, shown once per run (Gross+Net checks are already
+// deduplicated server-side into one list per class, so no basis-splitting
+// needed here). Hidden entirely when there's nothing to review.
+function renderDataQualityPanel(issues) {
+  const panel = document.getElementById('data-quality-panel');
+  const badge = document.getElementById('dq-count-badge');
+  const body  = document.getElementById('data-quality-body');
+  if (!issues || !issues.length) {
+    panel.style.display = 'none';
+    return;
+  }
+  badge.textContent = `— ${issues.length} issue${issues.length === 1 ? '' : 's'} flagged`;
+
+  const byClass = {};
+  issues.forEach(i => { (byClass[i.class_of_business] = byClass[i.class_of_business] || []).push(i); });
+
+  body.innerHTML = Object.keys(byClass).map(cls => `
+    <div style="margin-bottom:14px">
+      <div style="font-weight:600;font-size:13px;color:#613C82;margin-bottom:6px">${_escapeHtml(cls)} <span style="font-weight:400;color:#888">(${byClass[cls].length})</span></div>
+      ${byClass[cls].map(i => `
+        <div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid #F0EBF6;font-size:12.5px;line-height:1.5">
+          <span style="flex:0 0 auto;width:8px;height:8px;border-radius:50%;background:#C9A84C;margin-top:5px"></span>
+          <span style="color:#444">${_escapeHtml(i.message)}</span>
+        </div>`).join('')}
+    </div>`).join('');
+
+  panel.style.display = 'block';
 }
 
 function reservingSelectedClientId() {
@@ -3069,6 +3111,7 @@ async function runNicSummary() {
   document.getElementById('btn-reserving-avr-word').style.display = 'none';
   document.getElementById('reserving-data-warning').style.display = 'none';
   document.getElementById('reserving-notes-panel').style.display = 'none';
+  document.getElementById('data-quality-panel').style.display = 'none';
   ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
     document.getElementById(id).innerHTML =
       '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">' +
@@ -3093,7 +3136,7 @@ async function runNicSummary() {
 
     ['gross', 'net', 'ri'].forEach(basis => {
       let html = '';
-      data.classes.forEach(cls => { html += nicRow(cls, data.by_class[cls][basis], data.by_class[cls].warning); });
+      data.classes.forEach(cls => { html += nicRow(cls, data.by_class[cls][basis], data.by_class[cls].warning, basis === 'gross' ? data.by_class[cls].data_quality_issues : null); });
       html += `
         <tr style="font-weight:bold;background:#f0f7f0">
           <td><strong>Total</strong></td>
@@ -3105,6 +3148,7 @@ async function runNicSummary() {
         </tr>`;
       document.getElementById('nic-' + basis + '-body').innerHTML = html;
     });
+    renderDataQualityPanel(data.data_quality_issues);
 
     document.getElementById('btn-reserving-download').style.display = 'inline-flex';
     document.getElementById('btn-reserving-avr-word').style.display = 'inline-flex';
@@ -3357,6 +3401,7 @@ async function runUploadReserving() {
   const statusEl = document.getElementById('upload-status');
   document.getElementById('upload-results-actions').style.display = 'none';
   document.getElementById('panel-upload-results').style.display = 'none';
+  document.getElementById('data-quality-panel').style.display = 'none';
 
   if (!uploadedFileList || !uploadedFileList.length) {
     statusEl.innerHTML = '<span style="color:red">Select at least the 4 required .xlsx workbooks first.</span>';
@@ -3374,10 +3419,16 @@ async function runUploadReserving() {
     if (!d.success) throw new Error(d.detail);
     const data = d.data;
 
+    const dqByClass = (data.reserving_summary && data.reserving_summary.by_class) || {};
     let html = '';
-    data.classes.forEach(cls => { html += nicRow(cls, data.by_class[cls].gross); });
+    data.classes.forEach(cls => {
+      const warning = dqByClass[cls] ? dqByClass[cls].warning : null;
+      const dqIssues = dqByClass[cls] ? dqByClass[cls].data_quality_issues : null;
+      html += nicRow(cls, data.by_class[cls].gross, warning, dqIssues);
+    });
     document.getElementById('upload-nic-gross-body').innerHTML = html;
     document.getElementById('panel-upload-results').style.display = 'block';
+    renderDataQualityPanel(data.reserving_summary ? data.reserving_summary.data_quality_issues : null);
 
     statusEl.innerHTML = `<span style="color:#2a7">${data.classes.length} classes loaded — ` +
       `${data.journal_entries.length} journal entries, debit/credit balanced at ` +

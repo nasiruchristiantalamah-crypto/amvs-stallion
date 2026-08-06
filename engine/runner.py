@@ -38,6 +38,7 @@ Usage examples:
 """
 
 import time
+from dataclasses import asdict
 from typing import Dict, List, Optional
 
 from engine.assumptions import ReportingFrequency
@@ -54,6 +55,7 @@ from engine.claims_triangle import ClaimsTriangle
 from engine.chain_ladder import run_chain_ladder
 from engine.bornhuetter_ferguson import estimate_expected_loss_ratio, run_blended_reserving
 from engine.cape_cod import run_cape_cod
+from engine.data_quality import check_triangle_quality
 
 
 def _load_assumptions_and_product(
@@ -440,6 +442,15 @@ def run_reserving(
     net_tri   = ClaimsTriangle(class_of_business=class_of_business,
                                 origin_years=sorted(net_triangle.keys()),   triangle=net_triangle)
 
+    # ── Data quality — reviewable, never blocking (see engine/data_quality.py) ─
+    data_quality_issues = check_triangle_quality(
+        class_of_business, gross_triangle, net_triangle, gross_premium, net_premium,
+    )
+    if verbose and data_quality_issues:
+        print(f"\n  Data quality: {len(data_quality_issues)} issue(s) flagged for review")
+        for issue in data_quality_issues:
+            print(f"    [{issue.severity.upper()}] {issue.check}: {issue.message}")
+
     # ── Chain Ladder (always run — used directly, or as the BF baseline) ───
     cl_gross = run_chain_ladder(gross_tri)
     cl_net   = run_chain_ladder(net_tri)
@@ -512,6 +523,7 @@ def run_reserving(
         "development_factors_net":   [round(f, 4) for f in cl_net.development_factors.age_to_age],
         "expected_loss_ratio_gross": round(elr_gross_used, 4) if elr_gross_used is not None else None,
         "expected_loss_ratio_net":   round(elr_net_used, 4)   if elr_net_used   is not None else None,
+        "data_quality_issues":       [asdict(issue) for issue in data_quality_issues],
         "elapsed_seconds":           round(elapsed, 2),
     }
 
@@ -620,6 +632,7 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
         by_class[cls] = {
             "method":  method,
             "warning": client.class_warnings.get(cls),
+            "data_quality_issues": reserving["data_quality_issues"],
             "gross": {
                 "ibnr": round(gross_ibnr, 2), "ocr": round(gross_ocr, 2),
                 "ulae": round(gross_ulae, 2), "upr":  round(gross_upr, 2),
@@ -653,11 +666,14 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
         print(f"  Completed in {elapsed:.2f} seconds")
         print(f"{'='*60}\n")
 
+    all_data_quality_issues = [issue for cls in RESERVING_CLASSES for issue in by_class[cls]["data_quality_issues"]]
+
     return {
         "run_type":                "nic_summary",
         "classes":                 RESERVING_CLASSES,
         "by_class":                by_class,
         "totals":                  totals,
+        "data_quality_issues":     all_data_quality_issues,
         "elapsed_seconds":         round(elapsed, 2),
         "data_provenance_warning": client.data_provenance_warning,
         "data_file_used":          client.data_file_used,
