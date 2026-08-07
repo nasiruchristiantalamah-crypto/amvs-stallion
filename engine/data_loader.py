@@ -47,7 +47,9 @@ data_files merges on top of):
         engine/chain_ladder.py and engine/bornhuetter_ferguson.py for the
         validation of this module's output against PIC's real figures.
     "2025 PIC Final Data.xlsx"  (raw_data_workbook)
-        Sheet "Outstanding Claims-2025" — raw case reserve (OCR) register,
+        A sheet whose name CONTAINS "Outstanding Claims" (matched by
+        substring, not an exact "Outstanding Claims-2025" — see
+        _read_sheet_rows_containing()) — raw case reserve (OCR) register,
         one row per open claim, with Gross/Net Amount Outstanding.
     "UPR & DAC (2025).xlsx"  (upr_dac_workbook / upr_dac_sheet)
         Gross/Net Unearned Premium Reserve and Deferred Acquisition Cost by
@@ -217,6 +219,30 @@ def _read_sheet_rows(client: ClientConfig, data_file_key: str, sheet_name: str) 
                 f"— available sheets: {wb.sheetnames}"
             )
         ws = wb[sheet_name]
+        return list(ws.iter_rows(values_only=True))
+    finally:
+        wb.close()
+
+
+def _read_sheet_rows_containing(client: ClientConfig, data_file_key: str, name_contains: str) -> List[tuple]:
+    """
+    Like _read_sheet_rows(), but matches the first sheet whose NAME CONTAINS
+    `name_contains` (case-insensitive) rather than requiring an exact sheet
+    name — for sheets whose real name carries a reporting year/period suffix
+    that changes every run (e.g. "Outstanding Claims-2025" this year,
+    "Outstanding Claims-2026" next year) and shouldn't need a code change
+    just because the year rolled over.
+    """
+    path = client.data_file_path(data_file_key)
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    try:
+        match = next((s for s in wb.sheetnames if name_contains.lower() in s.lower()), None)
+        if match is None:
+            raise ValueError(
+                f"No sheet containing '{name_contains}' found in {path} for client '{client.client_id}' "
+                f"— available sheets: {wb.sheetnames}"
+            )
+        ws = wb[match]
         return list(ws.iter_rows(values_only=True))
     finally:
         wb.close()
@@ -500,7 +526,12 @@ def load_ocr(client_id: str = "pic", data_folder_override: Optional[str] = None)
 
 def _parse_ocr_sheet(client: ClientConfig) -> Tuple[List[tuple], int, int, int, int]:
     """Shared header/column detection for load_ocr() and load_ocr_granular() — returns (rows, class_col, gross_col, net_col, field_header_idx)."""
-    rows = _read_sheet_rows(client, "raw_data_workbook", "Outstanding Claims-2025")
+    # Matched by name CONTAINING "Outstanding Claims", not an exact
+    # "Outstanding Claims-2025" — the real sheet name carries the reporting
+    # year as a suffix, which changes every run (see
+    # _read_sheet_rows_containing()'s docstring for why this can't be a
+    # hardcoded literal without breaking every year the report rolls over).
+    rows = _read_sheet_rows_containing(client, "raw_data_workbook", "Outstanding Claims")
 
     field_header_idx, class_col = _find_row_with_col(rows, "Class of Business", mode="exact")
     if field_header_idx is None:

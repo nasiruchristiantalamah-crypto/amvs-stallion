@@ -14,6 +14,8 @@ import json
 import shutil
 import tempfile
 
+import openpyxl
+
 from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -22,9 +24,9 @@ from typing import Dict, List, Optional, Tuple
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
-from engine.runner import run_pricing, run_ifrs17, run_rate_table, run_reserving, run_nic_summary
+from engine.runner import run_pricing, run_ifrs17, run_rate_table, run_reserving, run_nic_summary, run_reserving_calculation_trace
 from engine.ifrs17_nonlife import generate_nonlife_paa_statements
-from engine.data_loader import load_paid_claims, load_rbc_solvency_data
+from engine.data_loader import load_paid_claims, load_rbc_solvency_data, RESERVING_CLASSES
 from engine.rbc.data_model import (
     CreditRiskExposures, InsuranceRiskExposures, LegacySolvencyInputs, MarketRiskExposures,
     OperationalRiskExposures, QualifyingCapitalResources,
@@ -1060,6 +1062,27 @@ def reserving_nic_summary_endpoint(client_id: str = DEFAULT_CLIENT, db: Session 
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@protected.get("/reserving/calculation-trace")
+def reserving_calculation_trace_endpoint(client_id: str = DEFAULT_CLIENT, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    The full Chain Ladder audit trail (cumulative -> incremental ->
+    development factors -> CDF -> ultimate -> IBNR) for every class, Gross
+    and Net — see engine.runner.run_reserving_calculation_trace(). A
+    separate endpoint from /reserving/nic-summary rather than folded into
+    it, since this is a lot more data than the summary table needs on
+    every load — the dashboard's Reserving Detail panel calls this only
+    when a reviewing actuary actually opens it.
+    """
+    _require_data_access(client_id)
+    try:
+        result = run_reserving_calculation_trace(client_id=client_id)
+        return {"success": True, "data": result}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  RESERVING NOTES — manual actuarial review/override, per client + class
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1458,17 +1481,31 @@ def download_nonlife_word_export(filename: str):
 # Railway can't host a client's real Excel workbooks (see _require_data_access
 # above) — this lets a user upload them directly through the dashboard instead
 # of pre-configuring a client_id/data_folder. The engine still needs a
-# *template* to know each workbook's expected filename, sheet names, and
-# column layout (see engine/data_loader.py's module docstring) — "pic" is the
-# only validated non-life workbook shape so far, so uploaded files must be
-# named exactly as clients/pic/assumptions.yaml's data_files expects.
+# *template* to know each workbook's expected sheet names and column layout
+# (see engine/data_loader.py's module docstring) — "pic" is the only
+# validated non-life workbook SHAPE so far (which classes, which columns),
+# but the FILE the user uploads is identified by its own SHEET NAMES (see
+# _detect_uploaded_file_kind() below), not by matching PIC's literal
+# filenames — a client's own file naming convention (their own year, their
+# own company name) is never part of the check.
 # client_name / valuation_date from the form are cosmetic report labels only
 # (this doesn't register a new client) — the engine runs as
 # client_id="pic" with its data folder swapped for the upload temp directory
-# (data_folder_override — see engine/data_loader.py's _resolve_client()).
+# (data_folder_override — see engine/data_loader.py's _resolve_client()),
+# with each uploaded file renamed internally to the filename that template
+# expects once its kind has been identified by content.
 
 UPLOAD_TEMPLATE_CLIENT_ID = "pic"
-_REQUIRED_UPLOAD_KEYS = ["ibnr_workbook", "raw_data_workbook", "upr_dac_workbook", "ulae_workbook"]
+
+# What each required workbook is FOR, in plain terms — shown to the user
+# when it can't be found among what they uploaded, instead of a filename
+# they'd have to match exactly.
+_REQUIRED_UPLOAD_KINDS = {
+    "ibnr_workbook":     "a claims triangle workbook (sheets named after each class of business, e.g. Motor/Fire/Accident/Others, with a cumulative claims table on each)",
+    "raw_data_workbook": "an outstanding claims register (a sheet with 'Outstanding Claims' in its name, listing Class of Business / Policy Number / Gross & Net Amount Outstanding)",
+    "upr_dac_workbook":  "a UPR & DAC workbook (a sheet with both 'UPR' and 'DAC' in its name)",
+    "ulae_workbook":     "a ULAE workbook (a sheet with 'ULAE' in its name)",
+}
 
 
 def _save_uploaded_files(files: List[UploadFile], temp_dir: str) -> None:
@@ -1482,19 +1519,73 @@ def _save_uploaded_files(files: List[UploadFile], temp_dir: str) -> None:
             shutil.copyfileobj(f.file, out)
 
 
-def _check_required_uploads(temp_dir: str) -> None:
+def _detect_uploaded_file_kind(path: str) -> Optional[str]:
+    """
+    Identify which of the 4 required workbook KINDS an uploaded .xlsx file
+    actually is, by its sheet names — the same way the parsers in
+    engine/data_loader.py already locate data (by sheet name / header text,
+    never by trusting the filename). This is what lets a client upload
+    files named however their own team names them, with their own year and
+    company name, rather than requiring PIC's exact "2025 ..." filenames.
+
+    Returns one of _REQUIRED_UPLOAD_KINDS' keys, or None if the file
+    doesn't look like any of them.
+    """
+    try:
+        wb = openpyxl.load_workbook(path, read_only=True)
+        sheet_names = [s.lower() for s in wb.sheetnames]
+        wb.close()
+    except Exception:
+        return None
+
+    class_matches = sum(1 for cls in RESERVING_CLASSES if cls.lower() in sheet_names)
+    if class_matches >= 2:
+        return "ibnr_workbook"
+    if any("outstanding claims" in s for s in sheet_names):
+        return "raw_data_workbook"
+    if any("upr" in s and "dac" in s for s in sheet_names):
+        return "upr_dac_workbook"
+    if any("ulae" in s for s in sheet_names):
+        return "ulae_workbook"
+    return None
+
+
+def _identify_and_rename_uploaded_files(temp_dir: str) -> None:
+    """
+    Detect each uploaded file's kind by content (see
+    _detect_uploaded_file_kind()) and rename it in place to the literal
+    filename the "pic" template's data_files config expects, so the
+    existing engine/data_loader.py loaders (which resolve a client's
+    workbook path via that exact config value) can find it without any
+    further changes — this is purely an internal implementation detail,
+    invisible to the user, who never has to name their file any particular way.
+
+    Raises a 400 listing any required kind that wasn't found among the
+    uploaded files, described by what it IS (a claims triangle workbook,
+    an outstanding claims register, ...), not by a filename to match.
+    """
     template = load_client(UPLOAD_TEMPLATE_CLIENT_ID)
-    uploaded = {name.lower() for name in os.listdir(temp_dir)}
-    missing = [template.data_files[k] for k in _REQUIRED_UPLOAD_KEYS if template.data_files[k].lower() not in uploaded]
+    uploaded_paths = [os.path.join(temp_dir, name) for name in os.listdir(temp_dir) if name.lower().endswith(".xlsx")]
+
+    found: Dict[str, str] = {}
+    for path in uploaded_paths:
+        kind = _detect_uploaded_file_kind(path)
+        if kind and kind not in found:
+            found[kind] = path
+
+    missing = [desc for key, desc in _REQUIRED_UPLOAD_KINDS.items() if key not in found]
     if missing:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Missing required file(s): " + "; ".join(missing) +
-                " — uploaded files must be named exactly as PIC's own workbook template expects "
-                "(the only validated non-life workbook shape so far)."
-            ),
+            detail="Couldn't find: " + "; ".join(missing) + " among the uploaded files. "
+                   "Files are identified by their sheet names, not their filename — "
+                   "check each workbook actually contains the sheets described above.",
         )
+
+    for key, source_path in found.items():
+        target_path = os.path.join(temp_dir, template.data_files[key])
+        if os.path.abspath(source_path) != os.path.abspath(target_path):
+            shutil.copyfile(source_path, target_path)
 
 
 def _run_uploaded_reserving(temp_dir: str, period: str):
@@ -1525,7 +1616,7 @@ async def upload_client_data(
     temp_dir = tempfile.mkdtemp(prefix="amvs_upload_")
     try:
         _save_uploaded_files(files, temp_dir)
-        _check_required_uploads(temp_dir)
+        _identify_and_rename_uploaded_files(temp_dir)
         statements, entries, _paid = _run_uploaded_reserving(temp_dir, valuation_date)
         ledger = build_general_ledger(entries)
 
@@ -1574,7 +1665,7 @@ async def upload_export_excel(
     temp_dir = tempfile.mkdtemp(prefix="amvs_upload_")
     try:
         _save_uploaded_files(files, temp_dir)
-        _check_required_uploads(temp_dir)
+        _identify_and_rename_uploaded_files(temp_dir)
         statements, entries, paid = _run_uploaded_reserving(temp_dir, valuation_date)
 
         excel_path = export_nonlife_statements_to_excel(
@@ -1611,7 +1702,7 @@ async def upload_export_word(
     temp_dir = tempfile.mkdtemp(prefix="amvs_upload_")
     try:
         _save_uploaded_files(files, temp_dir)
-        _check_required_uploads(temp_dir)
+        _identify_and_rename_uploaded_files(temp_dir)
 
         docx_path = generate_nonlife_avr_word_document(
             client_id             = UPLOAD_TEMPLATE_CLIENT_ID,

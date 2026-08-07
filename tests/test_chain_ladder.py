@@ -302,3 +302,67 @@ def test_development_factors_converge_to_one():
     factors = result.development_factors.age_to_age
     print(f"\n[Motor Gross] Age-to-age factors: {[round(f, 4) for f in factors]}")
     assert factors[-1] < 1.1
+
+
+# ── build_calculation_trace() — the full cumulative -> incremental -> IBNR audit trail ─
+
+def test_calculation_trace_incremental_sums_back_to_cumulative():
+    """The incremental triangle this builds must sum back to the exact same
+    cumulative values it was derived from — the one invariant that would
+    catch a transposed or off-by-one bug in the incremental derivation."""
+    from engine.chain_ladder import build_calculation_trace
+
+    triangle = _build_triangle("Motor (Gross)", MOTOR_GROSS_TRIANGLE)
+    trace = build_calculation_trace(triangle)
+    for oy, cum_row in trace["cumulative_triangle"].items():
+        inc_row = trace["incremental_triangle"][oy]
+        assert len(inc_row) == len(cum_row)
+        running = 0.0
+        for k in range(len(cum_row)):
+            running += inc_row[k]
+            # abs=0.05, not 0.01 — each cell is independently rounded to 2dp
+            # before summing, so a chain of ~8 additions can drift a couple
+            # of cents from rounding alone, not from a real derivation bug.
+            assert running == pytest.approx(cum_row[k], abs=0.05), f"origin year {oy}, age {k}"
+
+
+def test_calculation_trace_first_incremental_equals_first_cumulative():
+    """Age 0 has no prior diagonal to subtract — incremental[0] == cumulative[0] exactly."""
+    from engine.chain_ladder import build_calculation_trace
+
+    triangle = _build_triangle("Fire (Gross)", FIRE_GROSS_TRIANGLE)
+    trace = build_calculation_trace(triangle)
+    for oy in triangle.origin_years:
+        assert trace["incremental_triangle"][oy][0] == trace["cumulative_triangle"][oy][0]
+
+
+def test_calculation_trace_totals_match_run_chain_ladder_directly():
+    """The trace's totals must be identical to calling run_chain_ladder()
+    directly — this is meant to be the SAME computation exposed with more
+    detail, not a second implementation that could quietly drift."""
+    from engine.chain_ladder import build_calculation_trace
+
+    triangle = _build_triangle("Motor (Gross)", MOTOR_GROSS_TRIANGLE)
+    trace = build_calculation_trace(triangle)
+    direct = run_chain_ladder(triangle)
+    assert trace["total_ibnr"] == pytest.approx(direct.total_ibnr, abs=0.01)
+    assert trace["total_ultimate"] == pytest.approx(direct.total_ultimate, abs=0.01)
+    assert trace["cdf_to_ultimate"] == [round(f, 4) for f in direct.development_factors.cdf_to_ultimate]
+
+
+def test_real_pic_reserving_calculation_trace_end_to_end():
+    """The full engine.runner.run_reserving_calculation_trace() entry point
+    against real PIC data — every class, both bases, every step present."""
+    from engine.runner import run_reserving_calculation_trace
+
+    trace = run_reserving_calculation_trace(client_id="pic")
+    assert set(trace["classes"]) == set(CLASSES.keys())
+    for cls in trace["classes"]:
+        for basis in ("gross", "net"):
+            class_trace = trace["by_class"][cls][basis]
+            assert class_trace["cumulative_triangle"]
+            assert class_trace["incremental_triangle"]
+            assert len(class_trace["age_to_age_factors"]) > 0
+            assert len(class_trace["cdf_to_ultimate"]) > 0
+            assert class_trace["total_ibnr"] >= 0
+    print(f"\nMotor Gross total IBNR from trace: GHS {trace['by_class']['Motor']['gross']['total_ibnr']:,.2f}")

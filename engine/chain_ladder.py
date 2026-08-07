@@ -143,6 +143,44 @@ def calculate_development_factors(
     return DevelopmentFactors(age_to_age=age_to_age, cdf_to_ultimate=cdf)
 
 
+def build_calculation_trace(triangle: ClaimsTriangle) -> dict:
+    """
+    Every intermediate step from the raw cumulative triangle through to
+    IBNR, exposed rather than collapsed into just the final figure — for
+    a reviewing actuary (or the dashboard's Reserving Detail page) to see
+    exactly how a class's IBNR was actually derived: cumulative claims ->
+    incremental claims -> age-to-age development factors -> cumulative
+    development factors (CDF to ultimate) -> projected ultimate -> IBNR.
+
+    Returns a plain dict (JSON-serialisable as-is) rather than a dataclass,
+    since this is purely a display/audit assembly of numbers
+    run_chain_ladder() and calculate_development_factors() already compute
+    — not a new calculation.
+    """
+    triangle.validate()
+    factors = calculate_development_factors(triangle)
+    result = run_chain_ladder(triangle)
+
+    incremental_triangle: Dict[int, List[float]] = {}
+    for oy, row in triangle.triangle.items():
+        incremental_triangle[oy] = [round(row[0], 2)] + [round(row[k] - row[k - 1], 2) for k in range(1, len(row))]
+
+    return {
+        "class_of_business":        triangle.class_of_business,
+        "origin_years":              triangle.origin_years,
+        "cumulative_triangle":         {oy: [round(v, 2) for v in row] for oy, row in triangle.triangle.items()},
+        "incremental_triangle":           incremental_triangle,
+        "age_to_age_factors":                [round(f, 4) for f in factors.age_to_age],
+        "cdf_to_ultimate":                      [round(f, 4) for f in factors.cdf_to_ultimate],
+        "latest_cumulative_by_year":               result.latest_cumulative,
+        "ultimate_losses_by_year":                    result.ultimate_losses,
+        "ibnr_by_year":                                  result.ibnr_by_year,
+        "total_latest_cumulative":                          round(result.total_latest_cumulative, 2),
+        "total_ultimate":                                      round(result.total_ultimate, 2),
+        "total_ibnr":                                             round(result.total_ibnr, 2),
+    }
+
+
 def run_chain_ladder(
     triangle:                   ClaimsTriangle,
     outlier_exclusion_periods:  Optional[Dict[int, List[int]]] = None,

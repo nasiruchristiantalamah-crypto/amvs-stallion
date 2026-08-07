@@ -1066,10 +1066,14 @@
       <div class="panel" style="margin-bottom:16px">
         <div class="panel-title">Or upload your own client data</div>
         <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
-          Upload the 4 required workbooks — named exactly as PIC's own workbook template
-          expects (IBNR Projection, Outstanding Claims/Final Data, UPR &amp; DAC, ULAE) —
-          to run the same reserving engine against a different insurer's data, without
-          any server-side configuration.
+          Upload the 4 required workbooks to run the same reserving engine against your
+          own data, without any server-side configuration. Files are identified by the
+          <b>sheet names inside them</b>, not by filename — name them however your own
+          team does. Needed: a <b>claims triangle</b> workbook (one sheet per class of
+          business — Motor, Fire, Accident, Others), an <b>outstanding claims register</b>
+          (a sheet with "Outstanding Claims" in its name), a <b>UPR &amp; DAC</b> workbook
+          (a sheet with both "UPR" and "DAC" in its name), and a <b>ULAE</b> workbook (a
+          sheet with "ULAE" in its name).
         </p>
         <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px">
           <div>
@@ -1152,6 +1156,17 @@
         <div style="margin-top:10px;font-size:12px;color:#888">
           ULAE is not reinsured — RI ULAE is always shown as GHS 0.00, per PIC's own reporting convention.
         </div>
+      </div>
+
+      <div class="panel" id="reserving-detail-panel" style="margin-bottom:16px">
+        <div class="panel-title">IBNR Calculation Detail <span style="font-weight:normal;color:#888;font-size:12px">— cumulative → incremental → development factors → ultimate, every class</span></div>
+        <p style="color:#666;font-size:13px;line-height:1.7;margin-bottom:12px">
+          The full Chain Ladder working behind the IBNR figures above — not a different calculation,
+          the same one shown step by step instead of collapsed into a single number.
+        </p>
+        <button class="btn btn-primary" onclick="loadReservingCalculationTrace()" id="btn-reserving-detail">Show calculation detail</button>
+        <span id="reserving-detail-status" style="font-size:12px;margin-left:10px;color:#888"></span>
+        <div id="reserving-detail-body" style="margin-top:14px"></div>
       </div>
 
       <div class="panel" id="reserving-notes-panel" style="display:none">
@@ -3143,6 +3158,7 @@ async function runNicSummary() {
   document.getElementById('reserving-data-warning').style.display = 'none';
   document.getElementById('reserving-notes-panel').style.display = 'none';
   document.getElementById('data-quality-panel').style.display = 'none';
+  document.getElementById('reserving-detail-body').innerHTML = '';
   ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
     document.getElementById(id).innerHTML =
       '<tr><td colspan="6" style="text-align:center;color:#aaa;padding:30px">' +
@@ -3231,6 +3247,93 @@ function reservingNoteRowHtml(clientId, cls, warning, note) {
         <span id="rn-status-${cls}" style="font-size:11px;color:#888">${savedStatus}</span>
       </div>
     </div>`;
+}
+
+// ── IBNR Calculation Detail — cumulative -> incremental -> IBNR, every class ─
+function _traceTriangleTableHtml(originYears, triangleData, label) {
+  const maxCols = Math.max(...originYears.map(oy => (triangleData[oy] || []).length));
+  let html = `<div style="font-size:12px;font-weight:600;color:#613C82;margin:10px 0 4px">${label}</div>`;
+  html += '<div class="table-wrap"><table style="font-size:11.5px"><thead><tr><th>Origin year</th>';
+  for (let k = 0; k < maxCols; k++) html += `<th>Age ${k}</th>`;
+  html += '</tr></thead><tbody>';
+  originYears.forEach(oy => {
+    const row = triangleData[oy] || [];
+    html += `<tr><td><strong>${oy}</strong></td>` + row.map(v => `<td>${fmt(v)}</td>`).join('') + '</tr>';
+  });
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function _traceBasisHtml(basisLabel, trace) {
+  const oy = trace.origin_years;
+  let html = `<div style="font-weight:700;font-size:12.5px;color:#333;margin:16px 0 2px;text-transform:uppercase;letter-spacing:.03em">${basisLabel}</div>`;
+  html += _traceTriangleTableHtml(oy, trace.cumulative_triangle, 'Cumulative claims triangle');
+  html += _traceTriangleTableHtml(oy, trace.incremental_triangle, 'Incremental claims triangle (derived — cumulative[k] − cumulative[k−1])');
+
+  html += '<div style="font-size:12px;font-weight:600;color:#613C82;margin:10px 0 4px">Development factors</div>';
+  html += '<div class="table-wrap"><table style="font-size:11.5px"><thead><tr><th></th>' +
+    trace.age_to_age_factors.map((_, k) => `<th>${k}&rarr;${k + 1}</th>`).join('') + '</tr></thead><tbody>';
+  html += '<tr><td><strong>Age-to-age</strong></td>' + trace.age_to_age_factors.map(f => `<td>${f.toFixed(4)}x</td>`).join('') + '</tr>';
+  html += '</tbody></table></div>';
+  html += '<div class="table-wrap" style="margin-top:6px"><table style="font-size:11.5px"><thead><tr><th></th>' +
+    trace.cdf_to_ultimate.map((_, k) => `<th>Age ${k}</th>`).join('') + '</tr></thead><tbody>';
+  html += '<tr><td><strong>CDF to ultimate</strong></td>' + trace.cdf_to_ultimate.map(f => `<td>${f.toFixed(4)}x</td>`).join('') + '</tr>';
+  html += '</tbody></table></div>';
+
+  html += '<div style="font-size:12px;font-weight:600;color:#613C82;margin:10px 0 4px">Ultimate &amp; IBNR by origin year</div>';
+  html += '<div class="table-wrap"><table style="font-size:11.5px"><thead><tr><th>Origin year</th><th>Latest cumulative</th><th>Ultimate</th><th>IBNR</th></tr></thead><tbody>';
+  oy.forEach(y => {
+    html += `<tr><td>${y}</td><td>${fmt(trace.latest_cumulative_by_year[y])}</td><td>${fmt(trace.ultimate_losses_by_year[y])}</td><td>${fmt(trace.ibnr_by_year[y])}</td></tr>`;
+  });
+  html += `<tr style="font-weight:bold;background:#f7f4fa"><td>Total</td><td>${fmt(trace.total_latest_cumulative)}</td><td>${fmt(trace.total_ultimate)}</td><td>${fmt(trace.total_ibnr)}</td></tr>`;
+  html += '</tbody></table></div>';
+  return html;
+}
+
+function toggleTraceClass(cls) {
+  const body = document.getElementById('trace-body-' + cls);
+  const toggle = document.getElementById('trace-toggle-' + cls);
+  const expanded = body.style.display !== 'none';
+  body.style.display = expanded ? 'none' : 'block';
+  toggle.textContent = expanded ? '▸ expand' : '▾ collapse';
+}
+
+function renderReservingCalculationTrace(data) {
+  const container = document.getElementById('reserving-detail-body');
+  container.innerHTML = data.classes.map(cls => {
+    const classData = data.by_class[cls];
+    return `
+      <div style="margin-bottom:14px;border:1px solid #eee;border-radius:8px;padding:14px">
+        <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleTraceClass('${cls}')">
+          <strong style="font-size:14px">${_escapeHtml(cls)}</strong>
+          <span id="trace-toggle-${cls}" style="color:#888;font-size:12px">▸ expand</span>
+        </div>
+        <div id="trace-body-${cls}" style="display:none">
+          ${_traceBasisHtml('Gross', classData.gross)}
+          ${_traceBasisHtml('Net', classData.net)}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadReservingCalculationTrace() {
+  const clientId = reservingSelectedClientId();
+  const btn = document.getElementById('btn-reserving-detail');
+  const statusEl = document.getElementById('reserving-detail-status');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner spinner-dark"></span> Loading...';
+  btn.disabled = true;
+  statusEl.textContent = '';
+  try {
+    const r = await apiFetch('/reserving/calculation-trace?client_id=' + encodeURIComponent(clientId));
+    const d = await r.json();
+    if (!d.success) throw new Error(d.detail);
+    renderReservingCalculationTrace(d.data);
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
+  }
+  btn.innerHTML = original;
+  btn.disabled = false;
 }
 
 async function renderReservingNotesPanel(clientId, data) {

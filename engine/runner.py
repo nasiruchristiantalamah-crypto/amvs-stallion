@@ -52,7 +52,7 @@ from engine.pricing import solve_premium, build_rate_table
 from engine.ifrs17 import generate_ifrs17_report
 from engine.rollforward_store import load_prior_closing, save_closing_snapshot
 from engine.claims_triangle import ClaimsTriangle
-from engine.chain_ladder import run_chain_ladder
+from engine.chain_ladder import run_chain_ladder, build_calculation_trace
 from engine.bornhuetter_ferguson import estimate_expected_loss_ratio, run_blended_reserving
 from engine.cape_cod import run_cape_cod
 from engine.data_quality import check_triangle_quality
@@ -678,6 +678,36 @@ def run_nic_summary(client_id: str = "pic", data_folder_override: Optional[str] 
         "data_provenance_warning": client.data_provenance_warning,
         "data_file_used":          client.data_file_used,
     }
+
+
+def run_reserving_calculation_trace(client_id: str = "pic", data_folder_override: Optional[str] = None) -> dict:
+    """
+    The full Chain Ladder audit trail — cumulative triangle -> incremental
+    triangle -> age-to-age development factors -> CDF to ultimate ->
+    ultimate -> IBNR — for every reserving class, Gross and Net, in one
+    call. This is the data behind run_nic_summary()'s own IBNR figures,
+    exposed step by step rather than collapsed into just the final number,
+    for the dashboard's Reserving Detail page (or any other reviewing use)
+    to show its work rather than asking for trust in a single figure.
+
+    Returns:
+        {"classes": [...], "by_class": {cls: {"gross": <trace dict>, "net": <trace dict>}}}
+        — see engine.chain_ladder.build_calculation_trace() for the shape
+        of each trace dict.
+    """
+    from engine.data_loader import RESERVING_CLASSES, load_triangle
+
+    by_class: Dict[str, Dict[str, dict]] = {}
+    for cls in RESERVING_CLASSES:
+        tri = load_triangle(cls, client_id=client_id, data_folder_override=data_folder_override)
+        gross_tri = ClaimsTriangle(class_of_business=cls, origin_years=sorted(tri["gross_triangle"].keys()), triangle=tri["gross_triangle"])
+        net_tri   = ClaimsTriangle(class_of_business=cls, origin_years=sorted(tri["net_triangle"].keys()),   triangle=tri["net_triangle"])
+        by_class[cls] = {
+            "gross": build_calculation_trace(gross_tri),
+            "net":   build_calculation_trace(net_tri),
+        }
+
+    return {"classes": RESERVING_CLASSES, "by_class": by_class}
 
 
 def _allocate_others(others_total: float, weights: Dict[str, float]) -> Dict[str, float]:
