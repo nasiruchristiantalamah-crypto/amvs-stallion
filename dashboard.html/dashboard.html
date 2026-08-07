@@ -1038,7 +1038,7 @@
           <div class="page-title">Reserving</div>
           <div class="page-subtitle">Chain ladder and Bornhuetter-Ferguson IBNR, by class of business — run on a configured client's own data or an uploaded portfolio.</div>
         </div>
-        <span class="badge" id="reserving-client-badge">Provident Insurance (PIC) — Motor / Fire / Accident / Others</span>
+        <span class="badge" id="reserving-client-badge" style="display:none"></span>
       </div>
       <div class="page-header-divider"></div>
 
@@ -1106,6 +1106,10 @@
             <thead><tr><th>Class of business</th><th>IBNR</th><th>OCR</th><th>ULAE</th><th>UPR</th><th>DAC</th></tr></thead>
             <tbody id="upload-nic-gross-body"></tbody>
           </table>
+        </div>
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid #eee">
+          <div class="panel-title" style="font-size:14px">IBNR Calculation Detail <span style="font-weight:normal;color:#888;font-size:12px">— cumulative → incremental → development factors → ultimate, every class</span></div>
+          <div id="upload-reserving-detail-body" style="margin-top:10px"></div>
         </div>
       </div>
 
@@ -3133,7 +3137,9 @@ async function loadReservingClients() {
 function onReservingClientChanged() {
   const sel = document.getElementById('reserving-client-select');
   const opt = sel.options[sel.selectedIndex];
-  document.getElementById('reserving-client-badge').textContent = opt ? opt.textContent : '';
+  const badge = document.getElementById('reserving-client-badge');
+  badge.textContent = opt ? opt.textContent : '';
+  badge.style.display = opt ? 'inline-flex' : 'none';
   // Results/warnings/notes are all specific to the previously selected
   // client — clear them out so nothing stale from another client lingers
   // on screen until "Load NIC summary" is run again for this one.
@@ -3203,9 +3209,12 @@ async function runNicSummary() {
     await renderReservingNotesPanel(clientId, data);
 
   } catch (e) {
+    const redirectNote = e.message.includes('contact Stallion Consultants')
+      ? '<br><span style="color:#888;font-size:12px">This server has no local copy of that client\'s files — use "Or upload your own client data" below instead.</span>'
+      : '';
     ['nic-gross-body', 'nic-net-body', 'nic-ri-body'].forEach(id => {
       document.getElementById(id).innerHTML =
-        `<tr><td colspan="6" style="text-align:center;color:red;padding:20px">Error: ${e.message}</td></tr>`;
+        `<tr><td colspan="6" style="text-align:center;color:red;padding:20px">Error: ${e.message}${redirectNote}</td></tr>`;
     });
   }
 
@@ -3290,25 +3299,29 @@ function _traceBasisHtml(basisLabel, trace) {
   return html;
 }
 
-function toggleTraceClass(cls) {
-  const body = document.getElementById('trace-body-' + cls);
-  const toggle = document.getElementById('trace-toggle-' + cls);
+function toggleTraceClass(prefix, cls) {
+  const body = document.getElementById(`trace-body-${prefix}-${cls}`);
+  const toggle = document.getElementById(`trace-toggle-${prefix}-${cls}`);
   const expanded = body.style.display !== 'none';
   body.style.display = expanded ? 'none' : 'block';
   toggle.textContent = expanded ? '▸ expand' : '▾ collapse';
 }
 
-function renderReservingCalculationTrace(data) {
-  const container = document.getElementById('reserving-detail-body');
+// prefix keeps element ids unique when both the configured-client panel and
+// the upload-results panel render a trace at the same time (e.g. a user
+// runs "Load NIC summary" and then also uploads their own data without
+// navigating away) — every class name would otherwise collide between the two.
+function renderReservingCalculationTrace(data, targetContainerId, prefix) {
+  const container = document.getElementById(targetContainerId);
   container.innerHTML = data.classes.map(cls => {
     const classData = data.by_class[cls];
     return `
       <div style="margin-bottom:14px;border:1px solid #eee;border-radius:8px;padding:14px">
-        <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleTraceClass('${cls}')">
+        <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleTraceClass('${prefix}','${cls}')">
           <strong style="font-size:14px">${_escapeHtml(cls)}</strong>
-          <span id="trace-toggle-${cls}" style="color:#888;font-size:12px">▸ expand</span>
+          <span id="trace-toggle-${prefix}-${cls}" style="color:#888;font-size:12px">▸ expand</span>
         </div>
-        <div id="trace-body-${cls}" style="display:none">
+        <div id="trace-body-${prefix}-${cls}" style="display:none">
           ${_traceBasisHtml('Gross', classData.gross)}
           ${_traceBasisHtml('Net', classData.net)}
         </div>
@@ -3328,9 +3341,12 @@ async function loadReservingCalculationTrace() {
     const r = await apiFetch('/reserving/calculation-trace?client_id=' + encodeURIComponent(clientId));
     const d = await r.json();
     if (!d.success) throw new Error(d.detail);
-    renderReservingCalculationTrace(d.data);
+    renderReservingCalculationTrace(d.data, 'reserving-detail-body', 'cfg');
   } catch (e) {
-    statusEl.innerHTML = `<span style="color:red">${e.message}</span>`;
+    statusEl.innerHTML = `<span style="color:red">${e.message}</span>` +
+      (e.message.includes('contact Stallion Consultants')
+        ? '<br><span style="color:#888">This server has no local copy of that client\'s files — use "Or upload your own client data" below instead.</span>'
+        : '');
   }
   btn.innerHTML = original;
   btn.disabled = false;
@@ -3536,6 +3552,7 @@ async function runUploadReserving() {
   document.getElementById('upload-results-actions').style.display = 'none';
   document.getElementById('panel-upload-results').style.display = 'none';
   document.getElementById('data-quality-panel').style.display = 'none';
+  document.getElementById('upload-reserving-detail-body').innerHTML = '';
 
   if (!uploadedFileList || !uploadedFileList.length) {
     statusEl.innerHTML = '<span style="color:red">Select at least the 4 required .xlsx workbooks first.</span>';
@@ -3563,6 +3580,9 @@ async function runUploadReserving() {
     document.getElementById('upload-nic-gross-body').innerHTML = html;
     document.getElementById('panel-upload-results').style.display = 'block';
     renderDataQualityPanel(data.reserving_summary ? data.reserving_summary.data_quality_issues : null);
+    if (data.calculation_trace) {
+      renderReservingCalculationTrace(data.calculation_trace, 'upload-reserving-detail-body', 'upl');
+    }
 
     const tbOk = data.trial_balance_is_zero;
     statusEl.innerHTML = `<span style="color:#2a7">${data.classes.length} classes loaded — ` +

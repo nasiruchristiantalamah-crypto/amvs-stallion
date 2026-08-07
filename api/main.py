@@ -1619,6 +1619,11 @@ async def upload_client_data(
         _identify_and_rename_uploaded_files(temp_dir)
         statements, entries, _paid = _run_uploaded_reserving(temp_dir, valuation_date)
         ledger = build_general_ledger(entries)
+        # Computed HERE, inside the same request, while temp_dir still holds
+        # the uploaded files — /reserving/calculation-trace can't be used
+        # for uploaded data after the fact, since temp_dir is deleted the
+        # moment this request finishes (see the finally: block below).
+        calculation_trace = run_reserving_calculation_trace(client_id=UPLOAD_TEMPLATE_CLIENT_ID, data_folder_override=temp_dir)
 
         by_class = {
             cls: {basis: _class_liability_to_dict(statements["by_class"][cls][basis]) for basis in ("gross", "net", "ri")}
@@ -1633,6 +1638,7 @@ async def upload_client_data(
             "by_class":             by_class,
             "totals":               totals,
             "reserving_summary":    statements["reserving_summary"],
+            "calculation_trace":    calculation_trace,
             "journal_entries":      [_journal_entry_to_dict(e) for e in entries],
             "journal_total_debit":  round(sum(e.debit for e in entries), 2),
             "journal_total_credit": round(sum(e.credit for e in entries), 2),
