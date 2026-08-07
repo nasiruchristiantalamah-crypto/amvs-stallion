@@ -19,11 +19,20 @@ Sheets produced:
     5. Income statement       — derived from the journal's P&L accounts
                                 (Insurance Revenue, Service Expense, Finance
                                 Income, Reinsurance Expense/Recoveries)
-    6. Journal entries         — the full double-entry journal listing
+    6. Journal entries         — the full double-entry journal listing (combined view)
+       + Journal Entries - Gross / - RI / - <Class>  — PIC's own real per-basis/
+                                   class sheet split (PIC - Journals 2025.xlsx)
     7. General ledger           — T-account roll-forward per primary
                                    account (engine/general_ledger.py),
                                    whole-portfolio then by class of
                                    business, each checked to balance
+       + General_Ledger_PAA_Gross / _RI / _<Class>  — PIC's own real per-basis/
+                                   class sheet split (PIC PAA COA Gross Total 2025.xlsx)
+    7b. Recon Disclosures - Gross / - RI — IFRS 17 LRC/LIC roll-forward
+                                   disclosure (engine/recon_disclosures.py),
+                                   portfolio level, matching PIC's own real
+                                   sheet exactly (only built when paid_claims
+                                   is supplied — see export_nonlife_statements_to_excel)
     8. Assumptions               — RA loading, discount basis, data sources,
                                    generation timestamp — the basis this run
                                    was produced on
@@ -282,9 +291,12 @@ def _pnl_net(journal_entries: List[JournalEntry], class_of_business: str, accoun
     """
     Net P&L effect of one account for one class: credits increase profit,
     debits reduce it. `narrative_contains` optionally isolates one specific
-    movement type where several share the same account code (e.g. account
-    "302" carries IBNR movement, OCR movement, and risk adjustment movement
-    as three separate postings — see engine/journals.py's post_journal_entries()).
+    movement type where several share the same account code — PIC's real
+    chart of accounts genuinely combines claims, ULAE, risk adjustment
+    release, and acquisition cost recognition into ONE account, "204 - P&L
+    (PAA Insurance Expenses)" (see engine/journals.py's CHART_OF_ACCOUNTS
+    and post_journal_entries()), so narrative is how this report tells
+    those movement types apart from each other, not the account code.
     """
     return round(sum(
         (e.credit - e.debit) for e in journal_entries
@@ -331,10 +343,10 @@ def _build_income_statement_sheet(wb, journal_entries: List[JournalEntry], state
 
     rows, total_idx = [], set()
 
-    premium_release = [_pnl_net(journal_entries, cls, "301") for cls in classes]
+    premium_release = [_pnl_net(journal_entries, cls, "206") for cls in classes]
     rows.append(line("PAA premium reserve release excl inv component", premium_release))
 
-    claims_paid = [-_pnl_net(journal_entries, cls, "201", "claims paid") for cls in classes]
+    claims_paid = [-_pnl_net(journal_entries, cls, "201", "Payment of Claims") for cls in classes]
     rows.append(line("Actual claims and expenses excl inv comp over the period", claims_paid))
 
     zeros = [0.0] * len(classes)
@@ -342,15 +354,16 @@ def _build_income_statement_sheet(wb, journal_entries: List[JournalEntry], state
     rows.append(line("Expected release of risk adjustment for incurred claims", zeros))
 
     new_incurred = [
-        -(_pnl_net(journal_entries, cls, "302", "IBNR movement") + _pnl_net(journal_entries, cls, "302", "OCR movement"))
+        -(_pnl_net(journal_entries, cls, "204", "current service cost] — IBNR")
+          + _pnl_net(journal_entries, cls, "204", "current service cost] — OCR"))
         for cls in classes
     ]
     rows.append(line("New Incurred Claims over the period", new_incurred))
 
-    pv_ra_increase = [-_pnl_net(journal_entries, cls, "302", "risk adjustment movement") for cls in classes]
+    pv_ra_increase = [-_pnl_net(journal_entries, cls, "204", "Release of Risk Adjustment") for cls in classes]
     rows.append(line("Increase in PV and RA of incurred claims liability", pv_ra_increase))
 
-    dac_release = [_pnl_net(journal_entries, cls, "304") for cls in classes]
+    dac_release = [_pnl_net(journal_entries, cls, "204", "Recognition of acquisition cost") for cls in classes]
     rows.append(line("Release of deferred acquisition cost", dac_release))
 
     onerous_loss = [
@@ -370,7 +383,7 @@ def _build_income_statement_sheet(wb, journal_entries: List[JournalEntry], state
     rows.append(line("Insurance service result", isr_vals))
     total_idx.add(len(rows) - 1)
 
-    finance_effect = [_pnl_net(journal_entries, cls, "305") for cls in classes]
+    finance_effect = [_pnl_net(journal_entries, cls, "205") for cls in classes]
     rows.append(line("Finance effect for incurred claims in P&L", finance_effect))
     rows.append(line("Investment Result", finance_effect))   # PIC's own report shows the same figure under both labels
 
@@ -384,7 +397,7 @@ def _build_income_statement_sheet(wb, journal_entries: List[JournalEntry], state
 
 def _build_journal_entries_sheet(wb, journal_entries: List[JournalEntry], period: str):
     ws = wb.create_sheet("Journal entries")
-    row = _write_title(ws, "Journal Entries", period)
+    row = _write_title(ws, "Journal Entries — All (combined view)", period)
 
     headers = ["Date", "Class of business", "Basis", "Account code", "Account name", "Debit (GHS)", "Credit (GHS)", "Narrative"]
     rows = [[e.date, e.class_of_business, e.basis.upper(), e.account_code, e.account_name,
@@ -394,6 +407,39 @@ def _build_journal_entries_sheet(wb, journal_entries: List[JournalEntry], period
     total_cr = round(sum(e.credit for e in journal_entries), 2)
     rows.append(["", "", "", "", "TOTAL", total_dr, total_cr, ""])
     _write_table(ws, row, headers, rows, currency_cols={6, 7}, total_row_indices={len(rows) - 1})
+
+
+def _sheet_safe_name(name: str) -> str:
+    """Excel worksheet names are capped at 31 characters and can't contain []:*?/\\ — trim/sanitise."""
+    for ch in "[]:*?/\\":
+        name = name.replace(ch, "-")
+    return name[:31]
+
+
+def _build_journal_entries_by_basis_and_class_sheets(wb, journal_entries: List[JournalEntry], statements: dict, period: str):
+    """
+    One Journal Entries sheet per basis (Gross, RI) and one per class of
+    business (Gross only, matching PIC's own real per-class sheets) —
+    sheet names matched to PIC's real "PIC - Journals 2025.xlsx" exactly
+    ("Journal Entries - Gross", "Journal Entries - RI", "Journal Entries
+    - Motor", etc.), alongside the combined convenience view above.
+    """
+    headers = ["Date", "Account code", "Account name", "Debit (GHS)", "Credit (GHS)", "Narrative"]
+
+    def _sheet_for(display_name: str, entries: List[JournalEntry]) -> None:
+        ws = wb.create_sheet(_sheet_safe_name(display_name))
+        row = _write_title(ws, display_name, period)
+        rows = [[e.date, e.account_code, e.account_name, e.debit if e.debit else None, e.credit if e.credit else None, e.narrative]
+                for e in entries]
+        total_dr = round(sum(e.debit for e in entries), 2)
+        total_cr = round(sum(e.credit for e in entries), 2)
+        rows.append(["", "", "TOTAL", total_dr, total_cr, ""])
+        _write_table(ws, row, headers, rows, currency_cols={4, 5}, total_row_indices={len(rows) - 1})
+
+    _sheet_for("Journal Entries - Gross", [e for e in journal_entries if e.basis == "gross"])
+    _sheet_for("Journal Entries - RI", [e for e in journal_entries if e.basis == "ri"])
+    for cls in statements["classes"]:
+        _sheet_for(f"Journal Entries - {cls}", [e for e in journal_entries if e.class_of_business == cls and e.basis == "gross"])
 
 
 def _build_general_ledger_sheet(wb, journal_entries: List[JournalEntry], period: str):
@@ -439,6 +485,102 @@ def _build_general_ledger_sheet(wb, journal_entries: List[JournalEntry], period:
         row = _write_table(ws, row, ledger_headers, cls_rows, currency_cols={4, 5, 6, 7})
 
 
+def _build_general_ledger_by_basis_and_class_sheets(wb, journal_entries: List[JournalEntry], statements: dict, period: str):
+    """
+    One General Ledger T-account sheet per basis (Gross, RI) and one per
+    class of business (Gross only) — sheet names matched to PIC's real
+    "PIC PAA COA Gross Total 2025.xlsx" exactly ("General_Ledger_PAA_Gross",
+    "General_Ledger_PAA_RI", "General_Ledger_PAA_Motor", etc.), alongside
+    the combined convenience view above.
+    """
+    from engine.general_ledger import build_general_ledger, trial_balance_is_zero
+
+    ledger_headers = ["Account code", "Account name", "Type", "Opening balance (GHS)", "Debits (GHS)", "Credits (GHS)", "Closing balance (GHS)", "Entries"]
+
+    def _sheet_for(display_name: str, entries: List[JournalEntry]) -> None:
+        ws = wb.create_sheet(_sheet_safe_name(display_name))
+        row = _write_title(ws, display_name, period)
+        ledger = build_general_ledger(entries)
+        ws.cell(row=row, column=1, value="Trial balance:").font = Font(bold=True)
+        ws.cell(row=row, column=2, value="Balanced" if trial_balance_is_zero(ledger) else "NOT BALANCED — investigate")
+        if not trial_balance_is_zero(ledger):
+            ws.cell(row=row, column=2).font = ONEROUS_FONT
+        row += 2
+        rows = [
+            [code, acc.account_name, acc.account_type.title(), acc.opening_balance, acc.total_debits, acc.total_credits, acc.closing_balance, acc.entry_count]
+            for code, acc in sorted(ledger.items())
+        ]
+        _write_table(ws, row, ledger_headers, rows, currency_cols={4, 5, 6, 7})
+
+    _sheet_for("General_Ledger_PAA_Gross", [e for e in journal_entries if e.basis == "gross"])
+    _sheet_for("General_Ledger_PAA_RI", [e for e in journal_entries if e.basis == "ri"])
+    for cls in statements["classes"]:
+        _sheet_for(f"General_Ledger_PAA_{cls}", [e for e in journal_entries if e.class_of_business == cls and e.basis == "gross"])
+
+
+def _build_recon_disclosures_sheets(wb, statements: dict, paid_claims: Dict[str, float], period: str):
+    """
+    IFRS 17 LRC/LIC roll-forward disclosure (engine/recon_disclosures.py),
+    one sheet per basis (Gross, RI) at the PORTFOLIO TOTAL level — matches
+    PIC's own real "Recon Disclosures - Gross" / "Recon Disclosures - RI"
+    sheets, which are portfolio-level notes, not broken out per class
+    (per-class detail already lives in the Balance Sheet / PAA liabilities
+    sheets).
+    """
+    from engine.journals import compute_movements
+    from engine.recon_disclosures import build_recon_disclosure
+
+    headers = ["", "LRC Excl Loss Component", "LRC Loss Component", "LIC Incl Risk Adjustment", "Total"]
+
+    def _rows_for(rd) -> List[list]:
+        return [
+            ["Opening insurance contract liabilities", rd.opening_lrc_excl_lc, rd.opening_loss_component, rd.opening_lic, rd.opening_total],
+            ["Net opening balance", rd.opening_lrc_excl_lc, rd.opening_loss_component, rd.opening_lic, rd.opening_total],
+            ["", None, None, None, None],
+            ["Insurance revenue", rd.insurance_revenue, 0, 0, rd.insurance_revenue],
+            ["Incurred claims and other directly attributable expenses", 0, 0, rd.incurred_claims_and_expenses, rd.incurred_claims_and_expenses],
+            ["Changes that relate to past service - adjustments to the LIC", 0, 0, rd.changes_past_service, rd.changes_past_service],
+            ["Losses on onerous contracts and reversal of those losses", 0, rd.onerous_losses_and_reversals, 0, rd.onerous_losses_and_reversals],
+            ["Insurance acquisition cashflows amortisation", rd.acquisition_cashflow_amortisation, 0, 0, rd.acquisition_cashflow_amortisation],
+            ["Insurance service expenses", rd.acquisition_cashflow_amortisation, rd.onerous_losses_and_reversals, rd.incurred_claims_and_expenses + rd.changes_past_service, rd.insurance_service_expenses_total],
+            ["Insurance service result", None, None, None, rd.insurance_service_result],
+            ["Finance income (expenses) from insurance contracts issued", None, None, rd.finance_income_expense, rd.finance_income_expense],
+            ["Total amounts recognised in comprehensive income", None, None, None, rd.total_recognised_in_comprehensive_income],
+            ["", None, None, None, None],
+            ["Investment components", 0, 0, rd.investment_components, rd.investment_components],
+            ["", None, None, None, None],
+            ["Premiums received", rd.premiums_received, 0, 0, rd.premiums_received],
+            ["Other charges", rd.other_charges, 0, 0, rd.other_charges],
+            ["Claims and other directly attributable expenses paid", 0, 0, rd.claims_and_expenses_paid, rd.claims_and_expenses_paid],
+            ["Insurance acquisition cashflows deducted", rd.acquisition_cashflows_deducted, None, None, rd.acquisition_cashflows_deducted],
+            ["Total cash flows", None, None, None, rd.total_cash_flows],
+            ["Outstanding amounts transferred to LIC at end of cover", 0, 0, rd.outstanding_transferred_to_lic, rd.outstanding_transferred_to_lic],
+            ["", None, None, None, None],
+            ["Net closing balance", rd.closing_lrc_excl_lc, rd.closing_loss_component, rd.closing_lic, rd.closing_total],
+            ["Closing insurance contract liabilities", rd.closing_lrc_excl_lc, rd.closing_loss_component, rd.closing_lic, rd.closing_total],
+        ]
+
+    def _sheet_for(display_name: str, rd) -> None:
+        ws = wb.create_sheet(_sheet_safe_name(display_name))
+        row = _write_title(ws, display_name, period)
+        _write_table(ws, row, headers, _rows_for(rd), currency_cols={2, 3, 4, 5})
+
+    # compute_movements() is basis-agnostic — it only ever reads the
+    # ClassLiability passed in as "current" (day-1 recognition means the
+    # whole current balance IS the movement), so calling it on the RI
+    # total directly gives RI's own disclosure movements correctly, with
+    # no separate RI-specific logic needed here.
+    total_paid = sum(paid_claims.values())
+    gross_movements = compute_movements(statements["totals"]["gross"], total_paid)
+    gross_rd = build_recon_disclosure(statements["totals"]["gross"], gross_movements, "gross")
+    _sheet_for("Recon Disclosures - Gross", gross_rd)
+
+    ri_total = statements["totals"]["ri"]
+    ri_movements = compute_movements(ri_total, 0.0)   # no separate "claims received from reinsurer" cash figure tracked yet
+    ri_rd = build_recon_disclosure(ri_total, ri_movements, "ri")
+    _sheet_for("Recon Disclosures - RI", ri_rd)
+
+
 def _build_assumptions_sheet(wb, statements: dict, meta: dict):
     ws = wb.create_sheet("Assumptions")
     row = _write_title(ws, "Assumptions Used In This Run", statements["period"])
@@ -465,7 +607,8 @@ def export_nonlife_statements_to_excel(
     statements:         dict,
     journal_entries:      List[JournalEntry],
     meta:                   Optional[dict] = None,
-    output_path:              Optional[str] = None,
+    paid_claims:              Optional[Dict[str, float]] = None,
+    output_path:                Optional[str] = None,
 ) -> str:
     """
     Build the full formatted workbook and write it to disk.
@@ -474,6 +617,10 @@ def export_nonlife_statements_to_excel(
         statements       : engine.ifrs17_nonlife.generate_nonlife_paa_statements() output
         journal_entries   : engine.journals.generate_nonlife_journal() output
         meta               : optional {"company_name":.., "data_source":.., "generated_at":..}
+        paid_claims          : optional {class: gross paid claims} — engine.data_loader.load_paid_claims()
+                                output. When supplied, adds the Recon Disclosures sheets (needs this to
+                                recompute the portfolio-level movement set — see _build_recon_disclosures_sheets).
+                                Omit to skip those two sheets (e.g. a caller that never had paid_claims to begin with).
         output_path         : file path to write to; defaults to
                               outputs/generated/nonlife_statements_<period>_<timestamp>.xlsx
 
@@ -489,7 +636,11 @@ def export_nonlife_statements_to_excel(
     _build_balance_sheet_sheet(wb, statements)
     _build_income_statement_sheet(wb, journal_entries, statements)
     _build_journal_entries_sheet(wb, journal_entries, statements["period"])
+    _build_journal_entries_by_basis_and_class_sheets(wb, journal_entries, statements, statements["period"])
     _build_general_ledger_sheet(wb, journal_entries, statements["period"])
+    _build_general_ledger_by_basis_and_class_sheets(wb, journal_entries, statements, statements["period"])
+    if paid_claims is not None:
+        _build_recon_disclosures_sheets(wb, statements, paid_claims, statements["period"])
     _build_assumptions_sheet(wb, statements, meta)
 
     if output_path is None:

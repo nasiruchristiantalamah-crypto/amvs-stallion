@@ -503,38 +503,46 @@ def _build_nonlife_section(
 
     _add_heading(doc, "Income Statement", level=2)
 
-    def _pnl_net(cls: str, code: str) -> float:
+    def _pnl_net(cls: str, code: str, narrative_contains: Optional[str] = None) -> float:
         return round(sum((e.credit - e.debit) for e in journal_entries
-                          if e.class_of_business == cls and e.account_code == code), 2)
+                          if e.class_of_business == cls and e.account_code == code
+                          and (narrative_contains is None or narrative_contains in e.narrative)), 2)
 
+    # PIC's real chart of accounts combines claims, ULAE, risk adjustment
+    # release, and acquisition cost recognition into ONE account, "204 - P&L
+    # (PAA Insurance Expenses)" — see engine/journals.py's CHART_OF_ACCOUNTS.
+    # Narrative is what tells these movement types apart here, not the code.
     headers = ["Line item"] + statements["classes"] + ["Total"]
     lines = [
-        ("Insurance Revenue (premium earned)", "301"),
-        ("Claims Incurred",                     "302"),
-        ("ULAE",                                "303"),
-        ("Acquisition Costs (DAC deferral)",    "304"),
+        ("Insurance Revenue (premium earned)", "206", None),
+        ("Claims Incurred",                     "204", "current service cost]"),
+        ("ULAE",                                "204", "claims handling expenses"),
+        ("Acquisition Costs (DAC deferral)",    "204", "Recognition of acquisition cost"),
     ]
     rows, service_result_row = [], {}
-    for label, code in lines:
-        vals = [_pnl_net(cls, code) for cls in statements["classes"]]
+    for i, (label, code, narrative) in enumerate(lines):
+        vals = [_pnl_net(cls, code, narrative) for cls in statements["classes"]]
         rows.append([label] + [_money(v) for v in vals] + [_money(round(sum(vals), 2))])
-        service_result_row[code] = vals
+        service_result_row[i] = vals
 
-    isr_vals = [sum(service_result_row[c][i] for c in ("301", "302", "303", "304")) for i in range(len(statements["classes"]))]
+    isr_vals = [sum(service_result_row[i][j] for i in range(len(lines))) for j in range(len(statements["classes"]))]
     rows.append(["Insurance Service Result"] + [_money(round(v, 2)) for v in isr_vals] + [_money(round(sum(isr_vals), 2))])
     isr_row_idx = len(rows) - 1
 
-    for label, code in (("Finance Income (Effect of Discounting)", "305"),
-                        ("Reinsurance Expense (Premium Ceded)",    "306"),
-                        ("Reinsurance Recoveries",                 "307")):
-        vals = [_pnl_net(cls, code) for cls in statements["classes"]]
+    ri_lines = [
+        ("Finance Income (Effect of Discounting)", "205", None),
+        ("Reinsurance Expense (Premium Ceded)",    "208", "Release of the reinsurance asset (Premium)"),
+        ("Reinsurance Recoveries",                 "208", "Changes / Increase in recoverable amounts"),
+    ]
+    for label, code, narrative in ri_lines:
+        vals = [_pnl_net(cls, code, narrative) for cls in statements["classes"]]
         rows.append([label] + [_money(v) for v in vals] + [_money(round(sum(vals), 2))])
 
     profit_vals = []
     for i, cls in enumerate(statements["classes"]):
         total = isr_vals[i]
-        for code in ("305", "306", "307"):
-            total += _pnl_net(cls, code)
+        for label, code, narrative in ri_lines:
+            total += _pnl_net(cls, code, narrative)
         profit_vals.append(round(total, 2))
     rows.append(["IFRS 17 Profit"] + [_money(v) for v in profit_vals] + [_money(round(sum(profit_vals), 2))])
     profit_row_idx = len(rows) - 1

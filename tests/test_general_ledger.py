@@ -59,10 +59,10 @@ def test_account_never_posted_to_is_absent_not_zero():
 
 
 def test_account_name_and_type_come_from_the_chart_of_accounts():
-    entries = [_entry("101", 10.0, 0.0), _entry("201", 0.0, 10.0)]
+    entries = [_entry("400", 10.0, 0.0), _entry("201", 0.0, 10.0)]
     ledger = build_general_ledger(entries)
-    assert ledger["101"].account_name == "Cash"
-    assert ledger["101"].account_type == "asset"
+    assert ledger["400"].account_name == "Cash"
+    assert ledger["400"].account_type == "asset"
     assert ledger["201"].account_type == "liability"
 
 
@@ -135,16 +135,17 @@ def test_real_pic_ledger_by_class_each_balances(real_journal):
 
 
 def test_real_pic_cash_account_matches_premium_written_minus_claims_paid(real_journal):
-    """Cash (101) is debited by premium written and credited by claims
+    """Cash (400 — PIC's own real code, see engine/journals.py's
+    CHART_OF_ACCOUNTS) is debited by premium written and credited by claims
     paid — nothing else posts to it (see journals.py's post_journal_entries) —
     so its closing balance is exactly that net figure, an independent
     cross-check on the roll-up rather than trusting the aggregation blindly."""
-    cash_entries = [e for e in real_journal if e.account_code == "101"]
+    cash_entries = [e for e in real_journal if e.account_code == "400"]
     expected_debit  = round(sum(e.debit for e in cash_entries), 2)
     expected_credit = round(sum(e.credit for e in cash_entries), 2)
 
     ledger = build_general_ledger(real_journal)
-    cash = ledger["101"]
+    cash = ledger["400"]
     assert cash.total_debits == expected_debit
     assert cash.total_credits == expected_credit
     assert cash.closing_balance == round(expected_debit - expected_credit, 2)

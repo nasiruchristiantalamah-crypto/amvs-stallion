@@ -7,19 +7,41 @@ What this file does:
     movement in a period, from engine/ifrs17_nonlife.py's statement output:
     premium written, premium earned, claims paid, IBNR movement, OCR
     movement, ULAE movement, risk adjustment movement, effect-of-discounting
-    movement, UPR movement, DAC movement, and RI recoverable/ceded
+    movement, DAC/acquisition cost movement, and RI recoverable/ceded
     movements — one Dr/Cr pair per movement, per class of business.
 
-Chart of accounts:
-    Based on PIC's own "2PAALedgerMoveFile" / "General_Ledger_PAA_Gross"
-    structure in PIC PAA COA Gross Total 2025.xlsx (Primary Account codes
-    for PAA Insurance LIC-PVFCF (201), LIC-Risk Adjustment (202), LRC
-    (203), P&L expense/finance/revenue accounts (204-207), Cash (400)),
-    extended with accounts PIC's own COA dump didn't cover but this
-    engine's statement structure needs (a separate ULAE account, an
-    explicit Effect-of-Discounting contra account, DAC as its own asset
-    account, and Reinsurance LIC/LRC accounts) — see CHART_OF_ACCOUNTS
-    below for the full code list and which are PIC-sourced vs extended.
+Chart of accounts — reconciled against PIC's own real ledger output:
+    Read directly from PIC's real "PIC PAA COA Gross Total 2025.xlsx",
+    sheet 2PAALedgerMoveFile (the actual movement-mapping template PIC's
+    own actuarial modelling tool — GREEN13/Iris-Data — uses) and
+    cross-checked against the General_Ledger_PAA_* T-account sheets in the
+    same workbook. 14 accounts, EXACTLY as PIC's own template names and
+    codes them — see CHART_OF_ACCOUNTS below. Two structural facts that
+    differ from an earlier version of this module, both confirmed against
+    the real file:
+      - Reinsurance gets its OWN account codes (209-211, 207, 208), not
+        the same 201-203 codes as Gross with a "ri" flag distinguishing
+        them. A gross and a ceded movement are never the same account.
+      - There is no separate DAC or ULAE account in PIC's real chart.
+        DAC nets directly into "PAA Insurance LRC" (203) — confirmed by
+        engine.ifrs17_nonlife.ClassLiability.lrc already being upr - dac,
+        i.e. AMVS's own model already carries LRC net of DAC, matching
+        PIC's presentation exactly. ULAE has no account of its own either
+        (PIC's real balance sheet doesn't disclose ULAE as a separate
+        line) — its P&L/liability impact posts through the same accounts
+        as IBNR/OCR (204 / 201).
+
+    Known, documented simplification vs PIC's real 74-movement template:
+    PIC's own ledger splits some of these movements more finely than this
+    engine currently computes — e.g. "interest accretion on LIC [PVFCF]"
+    and "effect of changes in interest rates and other financial
+    assumptions" are two separate real movements, both against the same
+    (201, 205) account pair, but engine.ifrs17_nonlife.py only produces
+    ONE combined effect_of_discounting figure today. Where this module
+    only has one combined number, it posts one combined line rather than
+    fabricating a split the underlying engine doesn't actually compute —
+    the ACCOUNT CODES and movement NARRATIVES below are matched to PIC's
+    real template either way, only the sub-line granularity differs.
 
 Movement basis — IMPORTANT, read before interpreting the output:
     engine/ifrs17_nonlife.py produces a POINT-IN-TIME snapshot (this
@@ -35,34 +57,31 @@ Movement basis — IMPORTANT, read before interpreting the output:
 ================================================================================
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date as date_type
 from typing import Dict, List, Optional
 
 from engine.ifrs17_nonlife import ClassLiability
 
 # ── Chart of accounts ────────────────────────────────────────────────────────
-# code: (name, account_type)  -- account_type is "asset", "liability", or "pnl"
+# code: (name, account_type) -- account_type is "asset", "liability", or "pnl".
+# Every code/name here is PIC's own, read verbatim from their real
+# 2PAALedgerMoveFile — see module docstring.
 CHART_OF_ACCOUNTS: Dict[str, tuple] = {
-    # Assets
-    "101": ("Cash", "asset"),
-    "102": ("Deferred Acquisition Costs (DAC)", "asset"),
-    "103": ("Reinsurance Recoverable — LIC Best Estimate", "asset"),   # PIC-style: PAA Reinsurance (LIC) - PVFCF
-    "104": ("Reinsurance Recoverable — Risk Adjustment", "asset"),
-    # Liabilities (PIC codes 201-203 carried through directly; 204+ extended)
-    "201": ("PAA Insurance LIC — Best Estimate (IBNR + OCR)", "liability"),
-    "202": ("PAA Insurance LIC — Risk Adjustment", "liability"),
-    "203": ("PAA Insurance LRC — Unearned Premium Reserve", "liability"),
-    "204": ("PAA Insurance LIC — ULAE", "liability"),
-    "205": ("PAA Reinsurance LRC — Unearned Premium Ceded", "liability"),   # contra, reduces net LRC
-    # P&L
-    "301": ("P&L — Insurance Revenue (Premium Earned)", "pnl"),
-    "302": ("P&L — Insurance Service Expense (Claims Incurred)", "pnl"),
-    "303": ("P&L — Insurance Service Expense (ULAE)", "pnl"),
-    "304": ("P&L — Insurance Service Expense (Acquisition Costs)", "pnl"),
-    "305": ("P&L — Insurance Finance Income (Effect of Discounting)", "pnl"),
-    "306": ("P&L — Reinsurance Expense (Premium Ceded)", "pnl"),
-    "307": ("P&L — Reinsurance Recoveries", "pnl"),
+    "201": ("PAA Insurance (LIC) - PVFCF", "liability"),
+    "202": ("PAA Insurance (LIC) - Risk Adjustment", "liability"),
+    "203": ("PAA Insurance LRC", "liability"),
+    "204": ("P&L (PAA Insurance Expenses)", "pnl"),
+    "205": ("P&L (PAA Insurance Finance)", "pnl"),
+    "206": ("P&L (PAA Insurance Revenue)", "pnl"),
+    "207": ("P&L (PAA Reinsurance Finance)", "pnl"),
+    "208": ("P&L (PAA Reinsurance Service)", "pnl"),
+    "209": ("PAA Reinsurance (LIC) - PVFCF", "asset"),
+    "210": ("PAA Reinsurance (LIC) - Risk Adjustment", "asset"),
+    "211": ("PAA Reinsurance LRC", "asset"),
+    "212": ("P&L (PAA OCI)", "pnl"),
+    "213": ("P&L (PAA Reinsurance OCI)", "pnl"),
+    "400": ("Cash", "asset"),
 }
 
 
@@ -75,36 +94,38 @@ class JournalEntry:
     credit:              float
     narrative:           str
     class_of_business:   str
-    basis:               str    # "gross" or "ri"
+    basis:               str    # "gross" or "ri" — every RI line already posts to its own 209-213/207/208 codes; this is a convenience filter, not what makes the codes correct
     period:               str
 
 
 @dataclass
 class MovementSet:
     """One class of business's period movements, ready to post."""
-    class_of_business:      str
-    premium_written:         float
-    premium_earned:            float
-    claims_paid:                  float
-    ibnr_movement:                  float
-    ocr_movement:                      float
-    ulae_movement:                       float
-    risk_adjustment_movement:               float
-    effect_of_discounting_movement:            float
-    dac_movement:                                 float
-    ri_recoverable_best_estimate_movement:          float
-    ri_recoverable_ra_movement:                        float
-    ri_ceded_premium_movement:                            float
+    class_of_business:            str
+    premium_written:               float
+    premium_earned:                 float
+    dac_movement:                    float
+    claims_paid:                      float
+    ibnr_movement:                     float
+    ocr_movement:                        float
+    ulae_movement:                        float
+    risk_adjustment_movement:              float
+    effect_of_discounting_movement:          float
+    ri_recoverable_best_estimate_movement:     float
+    ri_recoverable_ra_movement:                  float
+    ri_effect_of_discounting_movement:            float
+    ri_ceded_premium_movement:                      float
 
 
 def compute_movements(
     current:        ClassLiability,
     paid_claims:    float,
     prior:           Optional[ClassLiability] = None,
-    prior_ri:         Optional[ClassLiability] = None,
 ) -> MovementSet:
     """
-    Compute this period's movements for one class of business.
+    Compute this period's GROSS movements for one class of business. RI
+    movements are computed separately in generate_nonlife_journal() (they
+    come from the statement's own "ri" basis entry, not this function).
 
     Parameters:
         current       : this period's gross ClassLiability (from
@@ -114,11 +135,6 @@ def compute_movements(
         prior          : the SAME class's gross ClassLiability at the prior
                           period's close, or None for first-time
                           ("day 1") recognition — see module docstring.
-        prior_ri        : same, for the RI (ceded) basis — pass alongside
-                          `prior` when doing a genuine period-over-period
-                          roll-forward; `current` here must be the GROSS
-                          ClassLiability, RI figures come from the
-                          statement's own "ri" basis entry for this class.
 
     Returns:
         MovementSet ready for post_journal_entries().
@@ -146,15 +162,16 @@ def compute_movements(
         class_of_business                       = current.class_of_business,
         premium_written                          = round(premium_written, 2),
         premium_earned                           = round(premium_earned, 2),
+        dac_movement                             = round(delta(current.dac, p_dac), 2),
         claims_paid                              = round(paid_claims, 2),
         ibnr_movement                            = round(delta(current.ibnr, prior.ibnr if prior else None), 2),
         ocr_movement                             = round(delta(current.ocr, prior.ocr if prior else None), 2),
         ulae_movement                            = round(delta(current.ulae, prior.ulae if prior else None), 2),
         risk_adjustment_movement                 = round(delta(current.risk_adjustment, prior.risk_adjustment if prior else None), 2),
         effect_of_discounting_movement           = round(delta(current.effect_of_discounting, prior.effect_of_discounting if prior else None), 2),
-        dac_movement                             = round(delta(current.dac, p_dac), 2),
         ri_recoverable_best_estimate_movement    = 0.0,   # set by caller from the "ri" basis — see generate_nonlife_journal
         ri_recoverable_ra_movement               = 0.0,
+        ri_effect_of_discounting_movement        = 0.0,
         ri_ceded_premium_movement                = 0.0,
     )
 
@@ -165,9 +182,11 @@ def post_journal_entries(
     posting_date:   Optional[str] = None,
 ) -> List[JournalEntry]:
     """
-    Turn one class's MovementSet into balanced double-entry journal lines.
-    Every movement posts exactly one debit and one credit of equal amount;
-    a zero movement is skipped (no point posting a no-op entry).
+    Turn one class's MovementSet into balanced double-entry journal lines,
+    account codes and narratives matched to PIC's own real chart of
+    accounts (see module docstring). Every movement posts exactly one
+    debit and one credit of equal amount; a zero movement is skipped (no
+    point posting a no-op entry).
     """
     posting_date = posting_date or date_type.today().isoformat()
     cls = movements.class_of_business
@@ -186,32 +205,37 @@ def post_journal_entries(
                 narrative=narrative, class_of_business=cls, basis=basis, period=period,
             ))
 
-    # Premium written: Dr Cash, Cr LRC (Unearned Premium)
-    post("gross", "101", "203", movements.premium_written, f"{cls}: premium written")
-    # Premium earned: Dr LRC (Unearned Premium), Cr Insurance Revenue
-    post("gross", "203", "301", movements.premium_earned, f"{cls}: premium earned")
-    # Claims paid: Dr LIC (Best Estimate), Cr Cash
-    post("gross", "201", "101", movements.claims_paid, f"{cls}: claims paid")
-    # IBNR / OCR movement: Dr Insurance Service Expense, Cr LIC (Best Estimate)
-    post("gross", "302", "201", movements.ibnr_movement, f"{cls}: IBNR movement")
-    post("gross", "302", "201", movements.ocr_movement, f"{cls}: OCR movement")
-    # ULAE movement: Dr Insurance Service Expense (ULAE), Cr LIC (ULAE)
-    post("gross", "303", "204", movements.ulae_movement, f"{cls}: ULAE movement")
-    # Risk adjustment movement: Dr Insurance Service Expense, Cr LIC (Risk Adjustment)
-    post("gross", "302", "202", movements.risk_adjustment_movement, f"{cls}: risk adjustment movement")
-    # Effect of discounting: reduces the liability, recognised as finance income.
+    # Premium received / cash inflow: Dr Cash (400), Cr PAA Insurance LRC (203)
+    post("gross", "400", "203", movements.premium_written, "Premium received / Cash inflow")
+    # Subsequent measurement — release of the LRC to revenue: Dr LRC (203), Cr Insurance Revenue (206)
+    post("gross", "203", "206", movements.premium_earned, "Subsequent measurement [Release of the LRC to revenue]")
+    # Recognition of acquisition cost allocated to the period: Dr Insurance Expenses (204), Cr LRC (203)
+    # — LRC is already carried net of DAC (ClassLiability.lrc = upr - dac), matching
+    # PIC's own presentation, so this is the one movement DAC needs against 203/204.
+    post("gross", "204", "203", movements.dac_movement, "Recognition of acquisition cost allocated to the period")
+    # Payment of claims: Dr LIC-PVFCF (201), Cr Cash (400)
+    post("gross", "201", "400", movements.claims_paid, "Payment of Claims")
+    # Recognition of claims incurred in the period [current service cost]: Dr Insurance Expenses (204), Cr LIC-PVFCF (201)
+    post("gross", "204", "201", movements.ibnr_movement, "Recognition of claims incurred in the period [current service cost] — IBNR")
+    post("gross", "204", "201", movements.ocr_movement, "Recognition of claims incurred in the period [current service cost] — OCR")
+    # ULAE has no account of its own in PIC's real chart — its P&L/liability
+    # impact runs through the same pair as IBNR/OCR (see module docstring).
+    post("gross", "204", "201", movements.ulae_movement, "Recognition of claims handling expenses (ULAE)")
+    # Release of Risk Adjustment: Dr Insurance Expenses (204), Cr LIC-Risk Adjustment (202)
+    post("gross", "204", "202", movements.risk_adjustment_movement, "Release of Risk Adjustment")
+    # Interest accretion on LIC [Best estimate liability]: Dr LIC-PVFCF (201), Cr Insurance Finance (205)
     # effect_of_discounting_movement is <= 0 (see ifrs17_nonlife.py), so this
-    # naturally posts Dr LIC (reducing it) / Cr Finance Income.
-    post("gross", "201", "305", -movements.effect_of_discounting_movement, f"{cls}: effect of discounting")
-    # DAC movement: Dr DAC (asset), Cr Insurance Service Expense (Acquisition
-    # Costs) — capitalising the acquisition cost defers it out of this period's expense.
-    post("gross", "102", "304", movements.dac_movement, f"{cls}: DAC movement")
+    # naturally posts Dr LIC-PVFCF (reducing it) / Cr Insurance Finance.
+    post("gross", "201", "205", -movements.effect_of_discounting_movement, "Interest accretion on LIC [Best estimate liability]")
 
-    # RI recoverable movements
-    post("ri", "103", "307", movements.ri_recoverable_best_estimate_movement, f"{cls}: RI recoverable — best estimate")
-    post("ri", "104", "307", movements.ri_recoverable_ra_movement, f"{cls}: RI recoverable — risk adjustment")
-    # RI ceded premium: Dr Reinsurance Expense, Cr Reinsurance LRC (Unearned Premium Ceded)
-    post("ri", "306", "205", movements.ri_ceded_premium_movement, f"{cls}: RI ceded premium")
+    # RI recoverable movements — Reinsurance's own accounts (209-211, 207, 208), never the Gross codes.
+    post("ri", "209", "208", movements.ri_recoverable_best_estimate_movement, "Changes / Increase in recoverable amounts - adjustments to LIC (PVFC)")
+    post("ri", "210", "208", movements.ri_recoverable_ra_movement, "Changes / Increase in recoverable amounts - adjustments to LIC (RA)")
+    post("ri", "209", "207", -movements.ri_effect_of_discounting_movement, "Interest accretion on Reinsurance LIC [Best estimate liability]")
+    # Net movement in the ceded LRC asset (Reinsurance LRC, 211) — a single
+    # combined figure (see module docstring: PIC splits "premium paid" from
+    # "asset released to P&L" as two movements; this engine has one net number).
+    post("ri", "211", "208", movements.ri_ceded_premium_movement, "Release of the reinsurance asset (Premium)")
 
     return entries
 
@@ -258,14 +282,17 @@ def generate_nonlife_journal(
         if prior_ri is None:
             ri_be_movement = current_ri_best_estimate
             ri_ra_movement = current_ri.risk_adjustment
+            ri_discounting_movement = current_ri.effect_of_discounting
             ri_ceded_prem_movement = current_ri.lrc
         else:
             ri_be_movement = current_ri_best_estimate - (prior_ri.ibnr + prior_ri.ocr)
             ri_ra_movement = current_ri.risk_adjustment - prior_ri.risk_adjustment
+            ri_discounting_movement = current_ri.effect_of_discounting - prior_ri.effect_of_discounting
             ri_ceded_prem_movement = current_ri.lrc - prior_ri.lrc
 
         movements.ri_recoverable_best_estimate_movement = round(ri_be_movement, 2)
         movements.ri_recoverable_ra_movement = round(ri_ra_movement, 2)
+        movements.ri_effect_of_discounting_movement = round(ri_discounting_movement, 2)
         movements.ri_ceded_premium_movement  = round(ri_ceded_prem_movement, 2)
 
         all_entries.extend(post_journal_entries(movements, period, posting_date))

@@ -1166,7 +1166,7 @@ def nonlife_statements_endpoint(request: NonLifeStatementsRequest, db: Session =
         ledger     = build_general_ledger(entries)
 
         excel_path = export_nonlife_statements_to_excel(
-            statements, entries,
+            statements, entries, paid_claims=paid,
             meta={"company_name": client.name, "data_source": f"{client.name} Data Summaries — {request.period}"},
         )
         filename = os.path.basename(excel_path)
@@ -1498,13 +1498,13 @@ def _check_required_uploads(temp_dir: str) -> None:
 
 
 def _run_uploaded_reserving(temp_dir: str, period: str):
-    """Runs the full 4-class non-life PAA pipeline against uploaded workbooks. Returns (statements, journal_entries)."""
+    """Runs the full 4-class non-life PAA pipeline against uploaded workbooks. Returns (statements, journal_entries, paid_claims)."""
     statements = generate_nonlife_paa_statements(
         client_id=UPLOAD_TEMPLATE_CLIENT_ID, period=period, data_folder_override=temp_dir, verbose=False,
     )
     paid = load_paid_claims(client_id=UPLOAD_TEMPLATE_CLIENT_ID, data_folder_override=temp_dir)
     entries = generate_nonlife_journal(statements, paid, period=period)
-    return statements, entries
+    return statements, entries, paid
 
 
 def _journal_entry_to_dict(e) -> dict:
@@ -1526,7 +1526,7 @@ async def upload_client_data(
     try:
         _save_uploaded_files(files, temp_dir)
         _check_required_uploads(temp_dir)
-        statements, entries = _run_uploaded_reserving(temp_dir, valuation_date)
+        statements, entries, _paid = _run_uploaded_reserving(temp_dir, valuation_date)
         ledger = build_general_ledger(entries)
 
         by_class = {
@@ -1575,10 +1575,10 @@ async def upload_export_excel(
     try:
         _save_uploaded_files(files, temp_dir)
         _check_required_uploads(temp_dir)
-        statements, entries = _run_uploaded_reserving(temp_dir, valuation_date)
+        statements, entries, paid = _run_uploaded_reserving(temp_dir, valuation_date)
 
         excel_path = export_nonlife_statements_to_excel(
-            statements, entries,
+            statements, entries, paid_claims=paid,
             meta={"company_name": client_name, "data_source": f"{client_name} uploaded data — {valuation_date}"},
         )
         filename = os.path.basename(excel_path)

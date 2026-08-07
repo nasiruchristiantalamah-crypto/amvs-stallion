@@ -26,7 +26,11 @@ from outputs.excel_exporter import export_nonlife_statements_to_excel, STALLION_
 
 REQUIRED_SHEETS = [
     "Summary", "IBNR by class", "PAA liabilities", "Balance sheet",
-    "Income statement", "Journal entries", "Assumptions",
+    "Income statement", "Journal entries", "General ledger",
+    "Journal Entries - Gross", "Journal Entries - RI",
+    "General_Ledger_PAA_Gross", "General_Ledger_PAA_RI",
+    "Recon Disclosures - Gross", "Recon Disclosures - RI",
+    "Assumptions",
 ]
 
 
@@ -39,9 +43,9 @@ def exported(tmp_path_factory):
     out_dir = tmp_path_factory.mktemp("excel_export")
     out_path = os.path.join(str(out_dir), "test_nonlife_statements.xlsx")
     written_path = export_nonlife_statements_to_excel(
-        statements, entries, meta={"company_name": "Provident Insurance Limited"}, output_path=out_path,
+        statements, entries, meta={"company_name": "Provident Insurance Limited"}, paid_claims=paid, output_path=out_path,
     )
-    return {"path": written_path, "statements": statements, "entries": entries}
+    return {"path": written_path, "statements": statements, "entries": entries, "paid": paid}
 
 
 def test_file_is_written(exported):
@@ -87,3 +91,36 @@ def test_journal_sheet_totals_match_and_balance(exported):
 
     expected_debit = round(sum(e.debit for e in exported["entries"]), 2)
     assert excel_total_debit == expected_debit
+
+
+def test_per_class_journal_entries_sheets_exist_and_are_gross_only(exported):
+    """One 'Journal Entries - <Class>' sheet per class, matching PIC's own
+    real per-class sheet split — gross basis only (RI has its own combined sheet)."""
+    wb = openpyxl.load_workbook(exported["path"])
+    for cls in exported["statements"]["classes"]:
+        sheet_name = f"Journal Entries - {cls}"
+        assert sheet_name in wb.sheetnames
+        expected = [e for e in exported["entries"] if e.class_of_business == cls and e.basis == "gross"]
+        ws = wb[sheet_name]
+        last_row = list(ws.iter_rows(min_row=ws.max_row, max_row=ws.max_row, values_only=True))[0]
+        assert last_row[3] == round(sum(e.debit for e in expected), 2)
+
+
+def test_general_ledger_by_basis_sheets_report_a_balanced_trial_balance(exported):
+    wb = openpyxl.load_workbook(exported["path"])
+    for sheet_name in ("General_Ledger_PAA_Gross", "General_Ledger_PAA_RI"):
+        ws = wb[sheet_name]
+        trial_balance_cell = ws["B4"]
+        assert trial_balance_cell.value == "Balanced", f"{sheet_name}: {trial_balance_cell.value}"
+
+
+def test_recon_disclosures_closing_balance_matches_total_liability(exported):
+    """The Gross Recon Disclosures sheet's 'Net closing balance' Total column
+    must reconcile exactly to statements['totals']['gross'].total_liability
+    — an independent cross-check against the same authoritative figure the
+    Balance Sheet/Summary sheets already show, not just that the sheet exists."""
+    wb = openpyxl.load_workbook(exported["path"])
+    ws = wb["Recon Disclosures - Gross"]
+    values = {row[0]: row for row in ws.iter_rows(min_row=1, max_row=ws.max_row, values_only=True) if row[0]}
+    net_closing_row = values["Net closing balance"]
+    assert net_closing_row[4] == exported["statements"]["totals"]["gross"].total_liability
